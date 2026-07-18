@@ -2,7 +2,7 @@
 
 import { ChangeEvent, useMemo, useRef, useState } from "react";
 
-type Mode = "split" | "merge" | "rotate" | "organize" | "resize";
+type Mode = "split" | "merge" | "rotate" | "organize" | "resize" | "annotate" | "optimize";
 type PagePreview = { page: number; image: string };
 
 function downloadBlob(bytes: Uint8Array, name: string, type = "application/pdf") {
@@ -41,6 +41,11 @@ export default function PdfToolkit() {
   const [notice, setNotice] = useState("");
   const [previews, setPreviews] = useState<PagePreview[]>([]);
   const [removedPages, setRemovedPages] = useState<Set<number>>(new Set());
+  const [watermark, setWatermark] = useState("SY LAND");
+  const [addWatermark, setAddWatermark] = useState(true);
+  const [addNumbers, setAddNumbers] = useState(true);
+  const [numberStart, setNumberStart] = useState(1);
+  const [numberPosition, setNumberPosition] = useState<"bottom" | "top">("bottom");
   const inputRef = useRef<HTMLInputElement>(null);
   const totalSize = useMemo(() => files.reduce((sum, file) => sum + file.size, 0), [files]);
 
@@ -94,7 +99,7 @@ export default function PdfToolkit() {
     if (!files.length) { setNotice("Hãy chọn tệp PDF trước khi xử lý."); return; }
     setBusy(true); setNotice("Đang xử lý trên thiết bị…");
     try {
-      const { PDFDocument, degrees } = await import("pdf-lib");
+      const { PDFDocument, StandardFonts, degrees, rgb } = await import("pdf-lib");
       if (mode === "merge") {
         const output = await PDFDocument.create();
         for (const file of files) {
@@ -133,6 +138,33 @@ export default function PdfToolkit() {
         }
         downloadBlob(await output.save(), `${baseName(files[0].name)}_A4.pdf`);
         setNotice(`Đã chuyển ${source.getPageCount()} trang về khổ A4 và giữ đúng tỷ lệ nội dung.`);
+      } else if (mode === "annotate") {
+        if (!addWatermark && !addNumbers) throw new Error("Hãy chọn ít nhất một nội dung cần thêm.");
+        const document = await PDFDocument.load(await files[0].arrayBuffer(), { ignoreEncryption: false });
+        const regular = await document.embedFont(StandardFonts.Helvetica);
+        const bold = await document.embedFont(StandardFonts.HelveticaBold);
+        const safeWatermark = watermark.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/Đ/g, "D").replace(/đ/g, "d").replace(/[^\x20-\x7E]/g, "").trim() || "SY LAND";
+        document.getPages().forEach((page, index) => {
+          const width = page.getWidth(); const height = page.getHeight();
+          if (addWatermark) {
+            const fontSize = Math.max(28, Math.min(62, width / 8));
+            const textWidth = bold.widthOfTextAtSize(safeWatermark, fontSize);
+            page.drawText(safeWatermark, { x: (width - textWidth * .82) / 2, y: height / 2, size: fontSize, font: bold, color: rgb(.08, .32, .23), opacity: .16, rotate: degrees(-32) });
+          }
+          if (addNumbers) {
+            const label = `${numberStart + index}`; const fontSize = 10; const labelWidth = regular.widthOfTextAtSize(label, fontSize);
+            page.drawText(label, { x: (width - labelWidth) / 2, y: numberPosition === "bottom" ? 16 : height - 24, size: fontSize, font: regular, color: rgb(.18, .22, .2), opacity: .9 });
+          }
+        });
+        downloadBlob(await document.save({ useObjectStreams: true }), `${baseName(files[0].name)}_DANH_DAU.pdf`);
+        setNotice(`Đã cập nhật ${document.getPageCount()} trang${addWatermark ? " · dấu bản quyền" : ""}${addNumbers ? " · số trang" : ""}.`);
+      } else if (mode === "optimize") {
+        const before = files[0].size;
+        const document = await PDFDocument.load(await files[0].arrayBuffer(), { ignoreEncryption: false, updateMetadata: false });
+        const bytes = await document.save({ useObjectStreams: true, addDefaultPage: false, objectsPerTick: 50 });
+        downloadBlob(bytes, `${baseName(files[0].name)}_TOI_UU.pdf`);
+        const change = Math.round((1 - bytes.length / before) * 1000) / 10;
+        setNotice(change > 0 ? `Đã tối ưu cấu trúc: giảm ${change}% (${(before / 1024 / 1024).toFixed(1)} MB → ${(bytes.length / 1024 / 1024).toFixed(1)} MB).` : "Đã tối ưu cấu trúc. Tệp không giảm đáng kể vì dữ liệu ảnh đã được nén sẵn.");
       } else {
         const source = await PDFDocument.load(await files[0].arrayBuffer(), { ignoreEncryption: false });
         const total = source.getPageCount();
@@ -172,6 +204,8 @@ export default function PdfToolkit() {
           <button className={mode === "rotate" ? "active" : ""} type="button" onClick={() => changeMode("rotate")}>Xoay PDF</button>
           <button className={mode === "organize" ? "active" : ""} type="button" onClick={() => changeMode("organize")}>Sắp xếp · Xóa trang</button>
           <button className={mode === "resize" ? "active" : ""} type="button" onClick={() => changeMode("resize")}>Chuyển sang A4</button>
+          <button className={mode === "annotate" ? "active" : ""} type="button" onClick={() => changeMode("annotate")}>Số trang · Dấu bản quyền</button>
+          <button className={mode === "optimize" ? "active" : ""} type="button" onClick={() => changeMode("optimize")}>Tối ưu PDF</button>
         </div>
         <div className="pdf-tool-body">
           <div className="pdf-pick">
@@ -185,8 +219,10 @@ export default function PdfToolkit() {
             {mode === "rotate" && <><h3>Góc xoay toàn bộ trang</h3><div className="angle-options">{[90, 180, 270].map((value) => <button className={angle === value ? "active" : ""} type="button" key={value} onClick={() => setAngle(value)}>↻ {value}°</button>)}</div></>}
             {mode === "organize" && <><h3>Xem trước và sắp xếp trang</h3><div className="page-organizer">{previews.map((item, index) => <article className={removedPages.has(item.page) ? "removed" : ""} key={item.page}><div><img src={item.image} alt={`Xem trước trang ${item.page}`} /><span>{index + 1}</span></div><small>Trang gốc {item.page}</small><div><button type="button" onClick={() => movePage(index, -1)} disabled={index === 0}>←</button><button type="button" onClick={() => movePage(index, 1)} disabled={index === previews.length - 1}>→</button><button type="button" className="remove-page" onClick={() => toggleRemoved(item.page)}>{removedPages.has(item.page) ? "Giữ" : "Xóa"}</button></div></article>)}</div></>}
             {mode === "resize" && <div className="resize-info"><span>A3</span><b>→</b><span>A4</span><div><h3>Chuyển toàn bộ trang về A4</h3><p>Giữ tỷ lệ nội dung, tự nhận hướng dọc/ngang và căn giữa để thuận tiện in hoặc ký số.</p></div></div>}
+            {mode === "annotate" && <><h3>Đánh dấu tài liệu</h3><div className="annotate-options"><label className="annotate-check"><input type="checkbox" checked={addWatermark} onChange={(event) => setAddWatermark(event.target.checked)} /><span>Thêm dấu bản quyền</span></label><label>Nội dung dấu<input value={watermark} maxLength={60} disabled={!addWatermark} onChange={(event) => setWatermark(event.target.value)} placeholder="Ví dụ: SỸ LAND - BẢN KIỂM TRA" /><small>Chữ tiếng Việt được tự chuyển sang không dấu để tương thích PDF.</small></label><label className="annotate-check"><input type="checkbox" checked={addNumbers} onChange={(event) => setAddNumbers(event.target.checked)} /><span>Thêm số trang</span></label><div className="number-config"><label>Bắt đầu từ<input type="number" min="1" value={numberStart} disabled={!addNumbers} onChange={(event) => setNumberStart(Math.max(1, Number(event.target.value) || 1))} /></label><label>Vị trí<select value={numberPosition} disabled={!addNumbers} onChange={(event) => setNumberPosition(event.target.value as "bottom" | "top")}><option value="bottom">Giữa chân trang</option><option value="top">Giữa đầu trang</option></select></label></div></div></>}
+            {mode === "optimize" && <div className="optimize-info"><span>⇣</span><div><h3>Tối ưu cấu trúc PDF</h3><p>Sắp xếp lại đối tượng và luồng dữ liệu để giảm dung lượng khi có thể. Công cụ không hạ độ phân giải ảnh nên giữ nguyên chất lượng hồ sơ scan.</p><ul><li>Không xóa nội dung</li><li>Không giảm chất lượng ảnh</li><li>Kết quả phụ thuộc cấu trúc tệp gốc</li></ul></div></div>}
             {mode !== "merge" && mode !== "organize" && files[0] && <div className="single-pdf"><span>✓</span><p><b>{files[0].name}</b><small>{(files[0].size / 1024 / 1024).toFixed(1)} MB</small></p><button type="button" onClick={() => setFiles([])}>×</button></div>}
-            <div className="pdf-run"><p className={notice.includes("Không") ? "error" : ""}>{notice || (files.length ? `${files.length} tệp · ${(totalSize / 1024 / 1024).toFixed(1)} MB` : "Kết quả sẽ được tải về thiết bị.")}</p><button type="button" disabled={busy || !files.length || (mode === "organize" && !previews.length)} onClick={() => void run()}>{busy ? "Đang xử lý…" : mode === "merge" ? "Nối PDF" : mode === "rotate" ? "Xoay và tải PDF" : mode === "organize" ? "Xuất PDF đã sắp xếp" : mode === "resize" ? "Chuyển và tải PDF A4" : "Tách và tải kết quả"}</button></div>
+            <div className="pdf-run"><p className={notice.includes("Không") ? "error" : ""}>{notice || (files.length ? `${files.length} tệp · ${(totalSize / 1024 / 1024).toFixed(1)} MB` : "Kết quả sẽ được tải về thiết bị.")}</p><button type="button" disabled={busy || !files.length || (mode === "organize" && !previews.length)} onClick={() => void run()}>{busy ? "Đang xử lý…" : mode === "merge" ? "Nối PDF" : mode === "rotate" ? "Xoay và tải PDF" : mode === "organize" ? "Xuất PDF đã sắp xếp" : mode === "resize" ? "Chuyển và tải PDF A4" : mode === "annotate" ? "Thêm dấu và tải PDF" : mode === "optimize" ? "Tối ưu và tải PDF" : "Tách và tải kết quả"}</button></div>
           </div>
         </div>
       </div>
