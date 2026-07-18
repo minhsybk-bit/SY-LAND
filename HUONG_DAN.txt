@@ -1,0 +1,12 @@
+SỸ LAND — HƯỚNG DẪN ĐƯA WEBSITE LÊN GITHUB
+
+1. Giải nén tệp SY-LAND-GITHUB-PAGES.zip.
+2. Mở: https://github.com/minhsybk-bit/SY-LAND
+3. Nhấn Add file → Upload files.
+4. Kéo TOÀN BỘ nội dung bên trong thư mục đã giải nén vào cửa sổ GitHub.
+5. Chờ tải xong, kéo xuống dưới và nhấn Commit changes.
+6. Mở Settings → Pages → tại Source chọn GitHub Actions.
+7. Mở thẻ Actions, chờ quy trình có dấu tích xanh.
+8. Truy cập: https://minhsybk-bit.github.io/SY-LAND/
+
+Lưu ý: hãy tải cả thư mục .github vì đây là tệp tự động xuất bản website.

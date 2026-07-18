@@ -1,0 +1,18 @@
+{
+  "name": "sy-land-pages",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": { "build": "vite build --config vite.pages.config.ts" },
+  "dependencies": {
+    "@vitejs/plugin-react": "6.0.2",
+    "fflate": "^0.8.3",
+    "mammoth": "^1.12.0",
+    "pdfjs-dist": "^6.1.200",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "tesseract.js": "^7.0.0",
+    "vite": "8.0.13",
+    "xlsx": "^0.18.5"
+  }
+}
