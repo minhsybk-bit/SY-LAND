@@ -1,0 +1,36 @@
+THỨ TỰ CẬP NHẬT
+
+PHẦN 1 — TẠO BẢN PHÁT HÀNH PHẦN MỀM
+1. Mở kho https://github.com/minhsybk-bit/SY-LAND
+2. Chọn Releases → Draft a new release.
+3. Tạo tag mới: v11.2.0.
+4. Tiêu đề: SỸ LAND 11.2.0.
+5. Kéo tệp SYLAND_Setup_11.2.0.zip vào khu vực đính kèm.
+6. Dán nội dung trong GHI_CHU_PHAT_HANH.txt vào phần mô tả.
+7. Chọn Set as the latest release và nhấn Publish release.
+
+PHẦN 2 — CẬP NHẬT WEBSITE
+1. Trở lại tab Code của kho SY-LAND.
+2. Chọn Add file → Upload files.
+3. Tải chín tệp page.tsx, file-processor.tsx, globals.css, chat-assistant.tsx, software-release.tsx, pdf-toolkit.tsx, account-portal.tsx, github-pages.html và package.json trong thư mục này lên.
+4. GitHub sẽ ghi đè các tệp cũ và tạo mới chat-assistant.tsx, software-release.tsx, pdf-toolkit.tsx, account-portal.tsx; xác nhận Commit changes.
+5. Chờ Actions có dấu tích xanh.
+6. Mở https://minhsybk-bit.github.io/SY-LAND/#tai-phan-mem
+
+Kết nối hỗ trợ đã cấu hình:
+- Zalo Nguyễn Minh Sỹ: 0972560335
+- Facebook: https://www.facebook.com/nguyensybk/
+
+Tên sản phẩm hiển thị: Tiện ích hỗ trợ làm sạch CSDL đất đai SỸ LAND.
+
+Website tự đọc GitHub Release mới nhất. Từ phiên bản sau chỉ cần tạo Release mới và tải bộ cài .exe lên; không phải sửa lại số phiên bản trên website.
+
+Phần xử lý tệp đã hỗ trợ khai báo địa bàn toàn quốc: tỉnh mới/cũ, xã mới/cũ, mã xã, thôn–bản–xóm mới/cũ và tên gọi khác. Các mã 02140, 02143, 02146 chỉ còn là dữ liệu mẫu.
+
+Bộ công cụ PDF địa chính đã có: tách theo khoảng, xuất trang đã chọn, tách mỗi trang thành một tệp, nối nhiều PDF theo thứ tự, xoay toàn bộ trang, xem trước/xóa/sắp xếp tối đa 80 trang, chuyển PDF A3 hoặc khổ khác về A4, đánh số trang, thêm dấu bản quyền, tối ưu cấu trúc, so sánh hai phiên bản, xuất báo cáo so sánh CSV, làm sạch metadata, OCR tiếng Việt và nén ảnh PDF theo ba mức chất lượng. Mọi thao tác chạy cục bộ trên thiết bị.
+
+Giới hạn cần công bố rõ: OCR hỗ trợ tối đa 40 trang mỗi lượt và kết quả cần được kiểm tra lại, đặc biệt tên riêng, số thửa và diện tích. So sánh PDF dựa trên lớp văn bản theo từng trang; hồ sơ scan chưa có lớp chữ cần OCR trước. Nén ảnh hỗ trợ tối đa 80 trang, có thể làm mất lớp chữ tìm kiếm, liên kết, biểu mẫu và trạng thái chữ ký số tương tác; luôn giữ tệp gốc. Tối ưu cấu trúc giữ nguyên chất lượng ảnh nên có thể không giảm nhiều dung lượng đối với PDF scan chứa ảnh.
+
+Tài khoản hiện là chế độ kiểm thử cục bộ. Lần đầu mở mục Tài khoản, Nguyễn Minh Sỹ tự nhập email và đặt mật khẩu admin tối thiểu 8 ký tự. Không có mật khẩu mặc định trong mã nguồn. Tài khoản, phiên đăng nhập và báo cáo lỗi chỉ lưu trên trình duyệt đang sử dụng.
+
+Quan trọng: tạo Release trước khi cập nhật website để nút tải không bị lỗi 404.

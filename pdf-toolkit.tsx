@@ -2,7 +2,7 @@
 
 import { ChangeEvent, useMemo, useRef, useState } from "react";
 
-type Mode = "split" | "merge" | "rotate" | "organize" | "resize" | "annotate" | "optimize" | "compare" | "sanitize";
+type Mode = "split" | "merge" | "rotate" | "organize" | "resize" | "annotate" | "optimize" | "compare" | "sanitize" | "ocr" | "compress";
 type PagePreview = { page: number; image: string };
 type CompareResult = { pagesA: number; pagesB: number; changedPages: number[]; samePages: number; textCoverage: number };
 
@@ -13,6 +13,12 @@ function downloadBlob(bytes: Uint8Array, name: string, type = "application/pdf")
   anchor.href = url;
   anchor.download = name;
   anchor.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function downloadText(content: string, name: string, type = "text/plain;charset=utf-8") {
+  const url = URL.createObjectURL(new Blob([content], { type }));
+  const anchor = document.createElement("a"); anchor.href = url; anchor.download = name; anchor.click();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
@@ -48,6 +54,7 @@ export default function PdfToolkit() {
   const [numberStart, setNumberStart] = useState(1);
   const [numberPosition, setNumberPosition] = useState<"bottom" | "top">("bottom");
   const [compareResult, setCompareResult] = useState<CompareResult | null>(null);
+  const [compressQuality, setCompressQuality] = useState<"small" | "balanced" | "clear">("balanced");
   const inputRef = useRef<HTMLInputElement>(null);
   const totalSize = useMemo(() => files.reduce((sum, file) => sum + file.size, 0), [files]);
 
@@ -128,6 +135,31 @@ export default function PdfToolkit() {
         setNotice(changedPages.length ? `Phát hiện ${changedPages.length} trang khác nhau hoặc bị thêm/bớt.` : "Hai tệp có nội dung văn bản trùng khớp theo từng trang.");
         return;
       }
+      if (mode === "ocr") {
+        const pdfjs = await import("pdfjs-dist");
+        const workerUrl = await import("pdfjs-dist/build/pdf.worker.min.mjs?url");
+        const { createWorker } = await import("tesseract.js");
+        pdfjs.GlobalWorkerOptions.workerSrc = workerUrl.default;
+        const source = await pdfjs.getDocument({ data: new Uint8Array(await files[0].arrayBuffer()) }).promise;
+        if (source.numPages > 40) throw new Error("OCR trực tiếp hỗ trợ tối đa 40 trang mỗi lượt.");
+        const worker = await createWorker("vie");
+        const output: string[] = [`OCR SỸ LAND`, `Tệp nguồn: ${files[0].name}`, `Số trang: ${source.numPages}`, ""];
+        try {
+          for (let pageNumber = 1; pageNumber <= source.numPages; pageNumber++) {
+            setNotice(`Đang OCR trang ${pageNumber}/${source.numPages}…`);
+            const page = await source.getPage(pageNumber);
+            const base = page.getViewport({ scale: 1 });
+            const viewport = page.getViewport({ scale: Math.min(2.2, 2200 / Math.max(base.width, base.height)) });
+            const canvas = document.createElement("canvas"); canvas.width = Math.ceil(viewport.width); canvas.height = Math.ceil(viewport.height);
+            await page.render({ canvas, canvasContext: canvas.getContext("2d", { willReadFrequently: true })!, viewport }).promise;
+            const result = await worker.recognize(canvas);
+            output.push(`===== TRANG ${pageNumber} =====`, result.data.text.trim(), "");
+          }
+        } finally { await worker.terminate(); }
+        downloadText(output.join("\n"), `${baseName(files[0].name)}_OCR.txt`);
+        setNotice(`Đã OCR ${source.numPages} trang và xuất tệp văn bản. Cần kiểm tra lại tên riêng, số thửa và diện tích.`);
+        return;
+      }
       const { PDFDocument, StandardFonts, degrees, rgb } = await import("pdf-lib");
       if (mode === "merge") {
         const output = await PDFDocument.create();
@@ -199,6 +231,26 @@ export default function PdfToolkit() {
         document.setTitle(""); document.setAuthor(""); document.setSubject(""); document.setKeywords([]); document.setProducer("SY LAND"); document.setCreator("SY LAND");
         downloadBlob(await document.save({ useObjectStreams: true }), `${baseName(files[0].name)}_DA_LAM_SACH.pdf`);
         setNotice(`Đã làm sạch thông tin mô tả của ${document.getPageCount()} trang. Nội dung hiển thị không thay đổi.`);
+      } else if (mode === "compress") {
+        const pdfjs = await import("pdfjs-dist");
+        const workerUrl = await import("pdfjs-dist/build/pdf.worker.min.mjs?url");
+        pdfjs.GlobalWorkerOptions.workerSrc = workerUrl.default;
+        const source = await pdfjs.getDocument({ data: new Uint8Array(await files[0].arrayBuffer()) }).promise;
+        if (source.numPages > 80) throw new Error("Nén ảnh hỗ trợ tối đa 80 trang mỗi lượt.");
+        const profiles = { small: { scale: 1.15, quality: .52 }, balanced: { scale: 1.55, quality: .7 }, clear: { scale: 2, quality: .84 } } as const;
+        const profile = profiles[compressQuality]; const output = await PDFDocument.create();
+        for (let pageNumber = 1; pageNumber <= source.numPages; pageNumber++) {
+          setNotice(`Đang nén trang ${pageNumber}/${source.numPages}…`);
+          const page = await source.getPage(pageNumber); const base = page.getViewport({ scale: 1 }); const viewport = page.getViewport({ scale: profile.scale });
+          const canvas = document.createElement("canvas"); canvas.width = Math.ceil(viewport.width); canvas.height = Math.ceil(viewport.height);
+          await page.render({ canvas, canvasContext: canvas.getContext("2d")!, viewport, background: "white" }).promise;
+          const jpeg = await new Promise<Blob>((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("Không tạo được ảnh nén.")), "image/jpeg", profile.quality));
+          const image = await output.embedJpg(await jpeg.arrayBuffer()); const target = output.addPage([base.width, base.height]);
+          target.drawImage(image, { x: 0, y: 0, width: base.width, height: base.height });
+        }
+        const bytes = await output.save({ useObjectStreams: true }); const before = files[0].size; const change = Math.round((1 - bytes.length / before) * 1000) / 10;
+        downloadBlob(bytes, `${baseName(files[0].name)}_NEN_${compressQuality.toUpperCase()}.pdf`);
+        setNotice(change > 0 ? `Đã nén ${source.numPages} trang: giảm ${change}% (${(before / 1024 / 1024).toFixed(1)} MB → ${(bytes.length / 1024 / 1024).toFixed(1)} MB).` : "Đã tạo bản nén ảnh nhưng dung lượng không giảm; nên giữ tệp gốc.");
       } else {
         const source = await PDFDocument.load(await files[0].arrayBuffer(), { ignoreEncryption: false });
         const total = source.getPageCount();
@@ -242,6 +294,8 @@ export default function PdfToolkit() {
           <button className={mode === "optimize" ? "active" : ""} type="button" onClick={() => changeMode("optimize")}>Tối ưu PDF</button>
           <button className={mode === "compare" ? "active" : ""} type="button" onClick={() => changeMode("compare")}>So sánh PDF</button>
           <button className={mode === "sanitize" ? "active" : ""} type="button" onClick={() => changeMode("sanitize")}>Làm sạch metadata</button>
+          <button className={mode === "ocr" ? "active" : ""} type="button" onClick={() => changeMode("ocr")}>OCR PDF scan</button>
+          <button className={mode === "compress" ? "active" : ""} type="button" onClick={() => changeMode("compress")}>Nén ảnh PDF</button>
         </div>
         <div className="pdf-tool-body">
           <div className="pdf-pick">
@@ -259,8 +313,10 @@ export default function PdfToolkit() {
             {mode === "optimize" && <div className="optimize-info"><span>⇣</span><div><h3>Tối ưu cấu trúc PDF</h3><p>Sắp xếp lại đối tượng và luồng dữ liệu để giảm dung lượng khi có thể. Công cụ không hạ độ phân giải ảnh nên giữ nguyên chất lượng hồ sơ scan.</p><ul><li>Không xóa nội dung</li><li>Không giảm chất lượng ảnh</li><li>Kết quả phụ thuộc cấu trúc tệp gốc</li></ul></div></div>}
             {mode === "compare" && <><div className="compare-files">{files.map((file, index) => <article key={`${file.name}-${file.lastModified}`}><span>{index ? "B" : "A"}</span><div><b>{file.name}</b><small>{(file.size / 1024 / 1024).toFixed(1)} MB</small></div></article>)}</div>{compareResult && <div className="compare-result"><div><strong>{compareResult.pagesA}</strong><span>Trang bản A</span></div><div><strong>{compareResult.pagesB}</strong><span>Trang bản B</span></div><div><strong>{compareResult.samePages}</strong><span>Trang trùng khớp</span></div><div><strong>{compareResult.changedPages.length}</strong><span>Trang thay đổi</span></div><p><b>Trang cần kiểm tra:</b> {compareResult.changedPages.length ? compareResult.changedPages.slice(0, 100).join(", ") : "Không có"}{compareResult.changedPages.length > 100 ? "…" : ""}</p><small>Độ phủ văn bản: {compareResult.textCoverage}%. PDF scan không có lớp chữ cần OCR trước để so sánh chính xác.</small></div>}</>}
             {mode === "sanitize" && <div className="optimize-info"><span>⌫</span><div><h3>Làm sạch metadata</h3><p>Xóa tiêu đề, tác giả, chủ đề và từ khóa ẩn trong PDF trước khi gửi cho người khác. Nội dung và hình ảnh hiển thị được giữ nguyên.</p><ul><li>Không xóa chữ ký hoặc chú thích hiển thị</li><li>Không thay thế việc kiểm tra dữ liệu cá nhân trong nội dung</li><li>Tạo tệp mới, không ghi đè bản gốc</li></ul></div></div>}
+            {mode === "ocr" && <div className="optimize-info"><span>OCR</span><div><h3>Nhận dạng chữ tiếng Việt</h3><p>Chuyển từng trang scan thành văn bản TXT có phân cách trang. Xử lý cục bộ, tối đa 40 trang mỗi lượt.</p><ul><li>Kết quả OCR cần được người dùng kiểm tra lại</li><li>Không tự động thay thế dữ liệu hồ sơ gốc</li><li>Độ chính xác phụ thuộc chất lượng bản scan</li></ul></div></div>}
+            {mode === "compress" && <><h3>Mức nén hình ảnh</h3><div className="compression-options">{([{ key: "small", title: "Dung lượng nhỏ", note: "Phù hợp gửi xem nhanh" }, { key: "balanced", title: "Cân bằng", note: "Khuyến nghị cho hồ sơ thông thường" }, { key: "clear", title: "Rõ nét", note: "Ưu tiên chữ nhỏ và bản đồ" }] as const).map((item) => <label key={item.key}><input type="radio" checked={compressQuality === item.key} onChange={() => setCompressQuality(item.key)} /><span><b>{item.title}</b><small>{item.note}</small></span></label>)}</div><p className="compression-warning"><b>Lưu ý:</b> Bản nén được dựng lại từ ảnh từng trang nên có thể mất lớp chữ tìm kiếm, liên kết, biểu mẫu và trạng thái chữ ký số. Luôn giữ tệp gốc.</p></>}
             {mode !== "merge" && mode !== "organize" && mode !== "compare" && files[0] && <div className="single-pdf"><span>✓</span><p><b>{files[0].name}</b><small>{(files[0].size / 1024 / 1024).toFixed(1)} MB</small></p><button type="button" onClick={() => setFiles([])}>×</button></div>}
-            <div className="pdf-run"><p className={notice.includes("Không") ? "error" : ""}>{notice || (files.length ? `${files.length} tệp · ${(totalSize / 1024 / 1024).toFixed(1)} MB` : "Kết quả sẽ được tải về thiết bị.")}</p><button type="button" disabled={busy || !files.length || (mode === "compare" && files.length !== 2) || (mode === "organize" && !previews.length)} onClick={() => void run()}>{busy ? "Đang xử lý…" : mode === "merge" ? "Nối PDF" : mode === "rotate" ? "Xoay và tải PDF" : mode === "organize" ? "Xuất PDF đã sắp xếp" : mode === "resize" ? "Chuyển và tải PDF A4" : mode === "annotate" ? "Thêm dấu và tải PDF" : mode === "optimize" ? "Tối ưu và tải PDF" : mode === "compare" ? "So sánh hai PDF" : mode === "sanitize" ? "Làm sạch và tải PDF" : "Tách và tải kết quả"}</button></div>
+            <div className="pdf-run"><p className={notice.includes("Không") ? "error" : ""}>{notice || (files.length ? `${files.length} tệp · ${(totalSize / 1024 / 1024).toFixed(1)} MB` : "Kết quả sẽ được tải về thiết bị.")}</p><div className="pdf-run-actions">{mode === "compare" && compareResult && <button className="secondary-pdf-action" type="button" onClick={() => { const rows = ["Chi_tieu,Ban_A,Ban_B", `Ten_tep,\"${files[0].name.replace(/\"/g, '\"\"')}\",\"${files[1].name.replace(/\"/g, '\"\"')}\"`, `So_trang,${compareResult.pagesA},${compareResult.pagesB}`, `Trang_trung_khop,${compareResult.samePages},`, `Trang_thay_doi,\"${compareResult.changedPages.join("; ")}\",`, `Do_phu_van_ban,${compareResult.textCoverage}%,`]; downloadText("\uFEFF" + rows.join("\r\n"), `SYLAND_BAO_CAO_SO_SANH_${Date.now()}.csv`, "text/csv;charset=utf-8"); }}>Tải báo cáo CSV</button>}<button type="button" disabled={busy || !files.length || (mode === "compare" && files.length !== 2) || (mode === "organize" && !previews.length)} onClick={() => void run()}>{busy ? "Đang xử lý…" : mode === "merge" ? "Nối PDF" : mode === "rotate" ? "Xoay và tải PDF" : mode === "organize" ? "Xuất PDF đã sắp xếp" : mode === "resize" ? "Chuyển và tải PDF A4" : mode === "annotate" ? "Thêm dấu và tải PDF" : mode === "optimize" ? "Tối ưu và tải PDF" : mode === "compare" ? "So sánh hai PDF" : mode === "sanitize" ? "Làm sạch và tải PDF" : mode === "ocr" ? "OCR và tải TXT" : mode === "compress" ? "Nén và tải PDF" : "Tách và tải kết quả"}</button></div></div>
           </div>
         </div>
       </div>
