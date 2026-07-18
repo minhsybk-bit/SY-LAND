@@ -16,6 +16,9 @@ const FALLBACK: GithubRelease = {
 export default function SoftwareRelease() {
   const [release, setRelease] = useState<GithubRelease>(FALLBACK);
   const [live, setLive] = useState(false);
+  const [verifyStatus, setVerifyStatus] = useState<"idle" | "checking" | "match" | "mismatch" | "unavailable">("idle");
+  const [verifiedFile, setVerifiedFile] = useState("");
+  const [calculatedHash, setCalculatedHash] = useState("");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -30,6 +33,17 @@ export default function SoftwareRelease() {
   const version = release.tag_name.replace(/^v/i, "");
   const size = `${(installer.size / 1024 / 1024).toLocaleString("vi-VN", { maximumFractionDigits: 1 })} MB`;
   const checksum = installer.digest?.replace(/^sha256:/i, "") || (version === "11.2.0" ? FALLBACK.assets[0].digest!.replace("sha256:", "") : "Xem tại trang phát hành GitHub");
+
+  async function verifyFile(file?: File) {
+    if (!file) return;
+    setVerifiedFile(file.name); setCalculatedHash(""); setVerifyStatus("checking");
+    try {
+      const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+      const hash = Array.from(new Uint8Array(digest)).map((value) => value.toString(16).padStart(2, "0")).join("");
+      setCalculatedHash(hash);
+      setVerifyStatus(/^[a-f0-9]{64}$/i.test(checksum) ? (hash.toLowerCase() === checksum.toLowerCase() ? "match" : "mismatch") : "unavailable");
+    } catch (reason) { console.error(reason); setVerifyStatus("unavailable"); }
+  }
 
   return (
     <section className="software-release" id="tai-phan-mem" aria-labelledby="release-title">
@@ -52,6 +66,11 @@ export default function SoftwareRelease() {
           <div><dt>Ngày phát hành</dt><dd>{new Date(release.published_at).toLocaleDateString("vi-VN")}</dd></div>
         </dl>
         <div className="checksum"><span>SHA-256</span><code>{checksum}</code></div>
+        <div className="release-verifier">
+          <div><strong>Kiểm tra tệp đã tải</strong><small>SHA-256 được tính cục bộ, tệp không rời khỏi thiết bị.</small></div>
+          <label className={verifyStatus === "checking" ? "disabled" : ""}><input type="file" accept=".zip,.exe,application/zip,application/x-msdownload" disabled={verifyStatus === "checking"} onChange={(event) => { void verifyFile(event.target.files?.[0]); event.target.value = ""; }} />{verifyStatus === "checking" ? "Đang kiểm tra…" : "Chọn ZIP hoặc EXE"}</label>
+          {verifyStatus !== "idle" && verifyStatus !== "checking" && <div className={`verify-result ${verifyStatus}`}><span aria-hidden="true">{verifyStatus === "match" ? "✓" : verifyStatus === "mismatch" ? "!" : "i"}</span><p><b>{verifyStatus === "match" ? "Tệp chính xác, mã SHA-256 khớp." : verifyStatus === "mismatch" ? "Không khớp — không nên cài đặt tệp này." : "Đã tính mã nhưng chưa có mã chính thức để đối chiếu."}</b><small>{verifiedFile}</small>{calculatedHash && <code>{calculatedHash}</code>}</p></div>}
+        </div>
         <ul className="release-trust">
           <li><span aria-hidden="true">✓</span> Tự đồng bộ bản phát hành mới nhất</li>
           <li><span aria-hidden="true">✓</span> Có thể kiểm tra tính toàn vẹn bộ cài</li>
