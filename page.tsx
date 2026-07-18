@@ -99,6 +99,15 @@ const plans = [
   },
 ];
 
+const softwareModules = [
+  { code: "01", title: "Chuẩn hóa và đổi tên hồ sơ", status: "available", label: "Đang sử dụng", items: ["Đổi tên PDF, Word theo Mã xã · Số tờ · Số thửa", "Đổi hậu tố GT, TBXN, DDK hàng loạt", "Nhận đúng mã xã 02140, 02143, 02146 theo tên thôn", "Giữ số tờ lâm nghiệp 110000, 210000 cho RSX/RPH/RDD"] },
+  { code: "02", title: "OCR và trích xuất dữ liệu", status: "improving", label: "Đang hoàn thiện", items: ["OCR tiếng Việt cho PDF scan", "Đọc số tờ, số thửa, diện tích và địa chỉ", "Hiển thị tiến độ đã thực hiện/đang thực hiện", "Cho chuyên viên sửa và xác nhận trước khi xuất"] },
+  { code: "03", title: "PDF và tài liệu văn phòng", status: "roadmap", label: "Theo lộ trình", items: ["Tách, ghép và xoay PDF hàng loạt", "Chuyển khổ A3 sang A4 để ký số", "Word sang PDF hàng loạt", "PDF sang Word ưu tiên giữ bố cục và phông chữ"] },
+  { code: "04", title: "Tổng hợp PDF sang Excel", status: "improving", label: "Đang hoàn thiện", items: ["Tổng hợp các trường dữ liệu được chọn", "Tạo biểu đồ và tỷ lệ hoàn thành", "Chọn cột xuất linh hoạt", "Thêm sheet so sánh và báo cáo trường còn thiếu"] },
+  { code: "05", title: "Đối chiếu CSDL đất đai", status: "available", label: "Đang sử dụng", items: ["So khớp mã xã, số tờ, số thửa với Excel tổng", "Phát hiện trùng, thiếu và không khớp", "Lọc hoặc di chuyển hồ sơ không trùng", "Giữ nguyên dữ liệu gốc và xuất báo cáo mới"] },
+  { code: "06", title: "Phân loại và vận hành", status: "roadmap", label: "Theo lộ trình", items: ["Tự tạo cấu trúc thư mục Có GCN/Chưa có giấy", "Phân nhóm GT, TBXN, DDK", "Cài đặt Windows và tạo lối tắt Desktop", "Kiểm tra, tải và thông báo phiên bản mới"] },
+];
+
 export default function Home() {
   return (
     <main>
@@ -115,6 +124,7 @@ export default function Home() {
             <a href="#tinh-nang">Tính năng</a>
             <a href="#quy-trinh">Quy trình</a>
             <a href="#minh-hoa">Xử lý tệp</a>
+            <a href="#chuc-nang-phan-mem">Phần mềm</a>
             <a href="#tai-phan-mem">Tải phần mềm</a>
             <a href="#goi-dich-vu">Gói dịch vụ</a>
             <a href="#gioi-thieu">Giới thiệu</a>
@@ -219,6 +229,21 @@ export default function Home() {
             <p className="prototype-note live-note"><span aria-hidden="true">●</span> Công cụ đang hoạt động · Xử lý cục bộ</p>
           </div>
           <FileProcessor />
+
+          <section className="software-capabilities" id="chuc-nang-phan-mem" aria-labelledby="software-capabilities-title">
+            <div className="section-heading split-heading">
+              <div><p className="section-kicker">Phương án xây dựng phần mềm</p><h2 id="software-capabilities-title">Một bộ công cụ cho toàn bộ<br />quy trình làm sạch CSDL đất đai.</h2></div>
+              <p>Các chức năng được công bố theo đúng trạng thái phát triển. Chức năng “đang hoàn thiện” và “theo lộ trình” sẽ chỉ phát hành sau khi kiểm thử đủ độ ổn định và chính xác.</p>
+            </div>
+            <div className="software-module-grid">
+              {softwareModules.map((module) => <article className="software-module" key={module.code}>
+                <div className="module-top"><span>{module.code}</span><span className={`module-status ${module.status}`}>{module.label}</span></div>
+                <h3>{module.title}</h3>
+                <ul>{module.items.map((item) => <li key={item}><span aria-hidden="true">✓</span>{item}</li>)}</ul>
+              </article>)}
+            </div>
+            <div className="software-principles"><strong>Nguyên tắc phát triển</strong><span>Không tự bịa dữ liệu</span><span>Không ghi đè tệp gốc</span><span>Có tiến độ và nhật ký</span><span>Chuyên viên xác nhận kết quả</span></div>
+          </section>
 
           <section className="software-release" id="tai-phan-mem" aria-labelledby="release-title">
             <div className="release-copy">
