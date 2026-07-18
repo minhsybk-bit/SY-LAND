@@ -13,7 +13,7 @@ function answerQuestion(question: string) {
   if (/pdf|word|excel|ocr|tep|file/.test(q)) return "SỸ LAND hỗ trợ DOCX, PDF, XLSX, XLS và CSV; có OCR tiếng Việt cho PDF scan, trích số tờ, số thửa, diện tích và đối chiếu Excel tổng.";
   if (/gia|phi|goi|ban quyen|mua/.test(q)) return "Website đang công bố mức giá dự kiến cho gói Cá nhân, Văn phòng và Đơn vị. Để nhận tư vấn bản quyền phù hợp, hãy liên hệ anh Nguyễn Minh Sỹ qua Zalo 0972560335.";
   if (/bao mat|rieng tu|du lieu|may chu/.test(q)) return "Công cụ web hiện xử lý tệp cục bộ trên thiết bị và không tự động tải nội dung hồ sơ lên máy chủ. Người dùng vẫn cần rà soát kết quả trước khi sử dụng chính thức.";
-  if (/ma xa|02140|02143|02146|thon/.test(q)) return "Quy tắc đang hỗ trợ mã xã cũ 02140 (Văn Lang), 02143 (Lương Thượng) và 02146 (Kim Hỷ), ưu tiên nhận diện theo tên thôn và địa chỉ thửa đất.";
+  if (/ma xa|02140|02143|02146|thon|xa cu|xa moi|tinh/.test(q)) return "SỸ LAND dùng được cho địa bàn trên toàn quốc. Hãy mở mục ‘Địa bàn xử lý hồ sơ’ và khai báo tỉnh, xã mới/xã cũ, mã xã, thôn–bản–xóm mới/cũ. Các mã 02140, 02143, 02146 chỉ là dữ liệu mẫu đã cấu hình sẵn.";
   if (/110000|210000|rsx|rph|rdd|lam nghiep/.test(q)) return "Các loại đất RSX, RPH, RDD có thể dùng số tờ lâm nghiệp 110000 hoặc 210000. SỸ LAND giữ nguyên các số tờ 6 chữ số này và không coi là lỗi.";
   if (/lien he|zalo|facebook|tu van|sy/.test(q)) return "Bạn có thể liên hệ anh Nguyễn Minh Sỹ qua Zalo 0972560335 hoặc Facebook facebook.com/nguyensybk để được hỗ trợ trực tiếp.";
   if (/xin chao|chao|hello|hi\b/.test(q)) return "Xin chào! Tôi là trợ lý tự động của SỸ LAND. Bạn có thể hỏi về tải phần mềm, cài đặt, xử lý hồ sơ, bảng giá hoặc quyền riêng tư.";

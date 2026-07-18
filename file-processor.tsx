@@ -59,6 +59,19 @@ type HistoryRecord = {
   suggestedName: string;
 };
 
+type LocationProfile = {
+  provinceNew: string;
+  provinceOld: string;
+  communeNew: string;
+  communeOld: string;
+  communeCode: string;
+  villageNew: string;
+  villageOld: string;
+  aliases: string;
+};
+
+const EMPTY_LOCATION: LocationProfile = { provinceNew: "", provinceOld: "", communeNew: "", communeOld: "", communeCode: "", villageNew: "", villageOld: "", aliases: "" };
+
 const ACCEPTED = ".docx,.pdf,.xlsx,.xls,.csv";
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
 
@@ -113,8 +126,13 @@ const VILLAGE_CODE_MAP: Array<{ code: string; names: string[] }> = [
   { code: "02140", names: ["bản kén", "nặm cà", "chợ mới", "tân an", "nà diệc", "bản sảng", "nà lẹng", "cốc phia", "nà dường", "văn lang"] },
 ];
 
-function findVillageCode(text: string) {
+function findVillageCode(text: string, profile?: LocationProfile) {
   const normalized = text.toLocaleLowerCase("vi-VN");
+  if (profile?.communeCode) {
+    const configuredNames = [profile.provinceNew, profile.provinceOld, profile.communeNew, profile.communeOld, profile.villageNew, profile.villageOld, ...profile.aliases.split(/[,;\n]/)].map((name) => name.trim().toLocaleLowerCase("vi-VN")).filter((name) => name.length >= 2);
+    if (!configuredNames.length || configuredNames.some((name) => normalized.includes(name))) return profile.communeCode.padStart(5, "0");
+    return "";
+  }
   return VILLAGE_CODE_MAP.find((entry) => entry.names.some((name) => normalized.includes(name)))?.code || "";
 }
 
@@ -122,11 +140,11 @@ function cleanNumber(value?: string) {
   return (value || "").replace(/\s+/g, "").trim();
 }
 
-function extractLandFields(text: string, fileName: string): LandFields {
+function extractLandFields(text: string, fileName: string, profile?: LocationProfile): LandFields {
   const fileMatch = fileName.match(/(?:CHUACOGIAY|COGCN)_([0-9]{4,5})_([0-9]{1,6})_([0-9]{1,7})/i);
   const explicitCode = text.match(/m[aã]\s*x[aã]\s*[:\-]?\s*([0-9]{4,5})/iu)?.[1];
   const parcelAddress = text.match(/(?:địa\s*chỉ\s*thửa\s*đất|thửa\s*đất\s*tại)([\s\S]{0,280})/iu)?.[1] || "";
-  const communeCode = (fileMatch?.[1] || explicitCode || findVillageCode(parcelAddress) || findVillageCode(text)).padStart(5, "0");
+  const communeCode = (fileMatch?.[1] || explicitCode || findVillageCode(parcelAddress, profile) || findVillageCode(text, profile) || profile?.communeCode || "").padStart(5, "0");
   const mapSheetFromText = text.match(/tờ\s*bản\s*đồ(?:\s*địa\s*chính)?\s*(?:số)?\s*[:\-]?\s*([0-9]{1,6})/iu)?.[1];
   const parcelFromText = text.match(/(?:thửa\s*đất|thửa)\s*(?:số)?\s*[:\-]?\s*([0-9]{1,7})/iu)?.[1];
   const area = text.match(/diện\s*tích(?:\s*thửa\s*đất)?\s*[:\-]?\s*([0-9][0-9.,\s]*)\s*m(?:2|²)/iu)?.[1];
@@ -321,7 +339,7 @@ async function processExcel(file: File): Promise<ProcessedResult> {
   };
 }
 
-function BatchProcessor({ onProcessed }: { onProcessed: (record: HistoryRecord) => void }) {
+function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record: HistoryRecord) => void; locationProfile: LocationProfile }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const masterInputRef = useRef<HTMLInputElement>(null);
   const [items, setItems] = useState<BatchItem[]>([]);
@@ -468,7 +486,7 @@ function BatchProcessor({ onProcessed }: { onProcessed: (record: HistoryRecord) 
       .map<BatchItem>((file, index) => {
         const extension = file.name.split(".").pop()?.toLowerCase() || "";
         const valid = ["docx", "pdf", "xlsx", "xls", "csv"].includes(extension) && file.size <= MAX_FILE_SIZE;
-        const fields = extractLandFields("", file.name);
+        const fields = extractLandFields("", file.name, locationProfile);
         fields.prefix = batchPrefix;
         fields.suffix = batchSuffix;
         return {
@@ -514,7 +532,7 @@ function BatchProcessor({ onProcessed }: { onProcessed: (record: HistoryRecord) 
         } else {
           await processExcel(item.file);
         }
-        const extracted = extractLandFields(text, item.file.name);
+        const extracted = extractLandFields(text, item.file.name, locationProfile);
         extracted.prefix = item.fields.prefix;
         extracted.suffix = item.fields.suffix;
         const complete = Boolean(extracted.communeCode && extracted.mapSheet && extracted.parcel);
@@ -687,6 +705,8 @@ export default function FileProcessor() {
   const [progress, setProgress] = useState<ProcessingProgress>({ label: "Đang chuẩn bị…", percent: 0 });
   const [landFields, setLandFields] = useState<LandFields>({ communeCode: "", mapSheet: "", parcel: "", area: "", prefix: "CHUACOGIAY", suffix: "GT" });
   const [history, setHistory] = useState<HistoryRecord[]>([]);
+  const [locationProfile, setLocationProfile] = useState<LocationProfile>(EMPTY_LOCATION);
+  const [locationLoaded, setLocationLoaded] = useState(false);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -697,6 +717,18 @@ export default function FileProcessor() {
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("sy-land-location-profile");
+      if (stored) setLocationProfile({ ...EMPTY_LOCATION, ...JSON.parse(stored) });
+    } catch { /* Bỏ qua cấu hình địa bàn cũ không hợp lệ. */ }
+    setLocationLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    if (locationLoaded) localStorage.setItem("sy-land-location-profile", JSON.stringify(locationProfile));
+  }, [locationProfile, locationLoaded]);
 
   function addHistory(record: HistoryRecord) {
     setHistory((current) => {
@@ -738,7 +770,7 @@ export default function FileProcessor() {
       else if (extension === "pdf") processed = await processPdf(nextFile, setProgress);
       else processed = await processExcel(nextFile);
       if (processed.text && processed.kind !== "excel") {
-        setLandFields(extractLandFields(processed.text, nextFile.name));
+        setLandFields(extractLandFields(processed.text, nextFile.name, locationProfile));
       }
       setResult(processed);
       setStatus("done");
@@ -829,6 +861,20 @@ export default function FileProcessor() {
   return (
     <>
     <div className="processor-shell">
+      <details className="location-profile" open>
+        <summary><div><span className="location-glyph" aria-hidden="true">⌖</span><div><strong>Địa bàn xử lý hồ sơ</strong><small>Khai báo một lần để nhận diện địa danh và mã xã trên toàn quốc.</small></div></div><span>{locationProfile.communeCode ? `Mã xã ${locationProfile.communeCode}` : "Chưa khai báo"}</span></summary>
+        <div className="location-form">
+          <label>Tỉnh/thành phố hiện nay<input value={locationProfile.provinceNew} placeholder="Ví dụ: Thái Nguyên" onChange={(event) => setLocationProfile((current) => ({ ...current, provinceNew: event.target.value }))} /></label>
+          <label>Tỉnh/thành phố trước sắp xếp<input value={locationProfile.provinceOld} placeholder="Nếu có" onChange={(event) => setLocationProfile((current) => ({ ...current, provinceOld: event.target.value }))} /></label>
+          <label>Xã/phường hiện nay<input value={locationProfile.communeNew} placeholder="Tên xã/phường mới" onChange={(event) => setLocationProfile((current) => ({ ...current, communeNew: event.target.value }))} /></label>
+          <label>Xã/phường trước sắp xếp<input value={locationProfile.communeOld} placeholder="Tên xã/phường cũ" onChange={(event) => setLocationProfile((current) => ({ ...current, communeOld: event.target.value }))} /></label>
+          <label>Mã xã dùng đặt tên tệp<input value={locationProfile.communeCode} inputMode="numeric" maxLength={5} placeholder="Mã 5 chữ số" onChange={(event) => setLocationProfile((current) => ({ ...current, communeCode: event.target.value.replace(/\D/g, "").slice(0, 5) }))} /></label>
+          <label>Thôn/bản/xóm hiện nay<input value={locationProfile.villageNew} placeholder="Tên hiện nay" onChange={(event) => setLocationProfile((current) => ({ ...current, villageNew: event.target.value }))} /></label>
+          <label>Thôn/bản/xóm trước sắp xếp<input value={locationProfile.villageOld} placeholder="Tên cũ" onChange={(event) => setLocationProfile((current) => ({ ...current, villageOld: event.target.value }))} /></label>
+          <label className="location-aliases">Tên gọi khác, địa danh liên quan<textarea value={locationProfile.aliases} placeholder="Nhập nhiều tên, cách nhau bằng dấu phẩy; ví dụ: Khu 1, Nà Duồng, tên viết tắt…" onChange={(event) => setLocationProfile((current) => ({ ...current, aliases: event.target.value }))} /></label>
+          <div className="location-actions"><p><span aria-hidden="true">✓</span>Cấu hình được lưu cục bộ trên thiết bị và áp dụng cho cả xử lý một tệp, hàng loạt và đối chiếu.</p><button type="button" onClick={() => setLocationProfile(EMPTY_LOCATION)}>Xóa cấu hình</button></div>
+        </div>
+      </details>
       <div className="privacy-strip">
         <span className="privacy-icon" aria-hidden="true">✓</span>
         <div><strong>Tệp được xử lý ngay trên thiết bị</strong><small>Không tải lên hoặc lưu trữ trên máy chủ trong phiên bản này.</small></div>
@@ -910,7 +956,7 @@ export default function FileProcessor() {
         </section>
       </div>
     </div>
-    <BatchProcessor onProcessed={addHistory} />
+    <BatchProcessor onProcessed={addHistory} locationProfile={locationProfile} />
     <section className="local-history" aria-labelledby="history-title">
       <div className="history-heading"><div><span className="demo-label">06 · NHẬT KÝ CỤC BỘ</span><h3 id="history-title">Lịch sử xử lý gần đây</h3><p>Chỉ lưu tên tệp và trạng thái trên thiết bị này; không lưu nội dung hồ sơ.</p></div><div><button type="button" onClick={exportHistory} disabled={!history.length}>Tải CSV</button><button type="button" onClick={clearHistory} disabled={!history.length}>Xóa lịch sử</button></div></div>
       {!history.length ? <p className="history-empty">Chưa có hoạt động. Nhật ký sẽ xuất hiện sau khi xử lý tệp.</p> : <div className="history-table-wrap"><table><thead><tr><th>Thời gian</th><th>Tệp nguồn</th><th>Loại</th><th>Kết quả</th><th>Tên đề xuất</th></tr></thead><tbody>{history.map((entry) => <tr key={entry.id}><td>{new Date(entry.processedAt).toLocaleString("vi-VN")}</td><td>{entry.fileName}</td><td>{entry.fileType}</td><td><span>{entry.result}</span></td><td><code>{entry.suggestedName || "—"}</code></td></tr>)}</tbody></table></div>}
