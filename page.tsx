@@ -114,6 +114,7 @@ export default function Home() {
             <a href="#tinh-nang">Tính năng</a>
             <a href="#quy-trinh">Quy trình</a>
             <a href="#minh-hoa">Xử lý tệp</a>
+            <a href="#tai-phan-mem">Tải phần mềm</a>
             <a href="#goi-dich-vu">Gói dịch vụ</a>
             <a href="#gioi-thieu">Giới thiệu</a>
           </nav>
@@ -217,6 +218,34 @@ export default function Home() {
             <p className="prototype-note live-note"><span aria-hidden="true">●</span> Công cụ đang hoạt động · Xử lý cục bộ</p>
           </div>
           <FileProcessor />
+
+          <section className="software-release" id="tai-phan-mem" aria-labelledby="release-title">
+            <div className="release-copy">
+              <p className="section-kicker">Phần mềm SỸ LAND cho Windows</p>
+              <h2 id="release-title">Xử lý hồ sơ ngay trên máy tính.<br />Chủ động và riêng tư hơn.</h2>
+              <p>Bản cài đặt dành cho người dùng cần xử lý số lượng hồ sơ lớn, làm việc ngoại tuyến và sử dụng các công cụ chuyên sâu trên Windows.</p>
+              <div className="release-actions">
+                <a className="button button-primary" href="https://github.com/minhsybk-bit/SY-LAND/releases/download/v11.1.0/SYLAND_Setup_11.1.0.exe">Tải SỸ LAND 11.1.0 <span aria-hidden="true">↓</span></a>
+                <a className="text-link" href="https://github.com/minhsybk-bit/SY-LAND/releases/tag/v11.1.0">Xem ghi chú phát hành <span aria-hidden="true">›</span></a>
+              </div>
+              <p className="release-caution"><span aria-hidden="true">i</span> Chỉ tải từ website chính thức này. Windows có thể yêu cầu xác nhận khi cài đặt phần mềm mới.</p>
+            </div>
+            <aside className="release-card" aria-label="Thông tin phiên bản phần mềm">
+              <div className="release-card-top"><span className="windows-mark" aria-hidden="true">⊞</span><div><small>PHIÊN BẢN ỔN ĐỊNH</small><strong>SỸ LAND 11.1.0</strong></div><span className="stable-badge">Mới nhất</span></div>
+              <dl>
+                <div><dt>Hệ điều hành</dt><dd>Windows 10/11</dd></div>
+                <div><dt>Kiến trúc</dt><dd>32-bit · tương thích Windows 64-bit</dd></div>
+                <div><dt>Dung lượng</dt><dd>130,6 MB</dd></div>
+                <div><dt>Định dạng</dt><dd>Bộ cài .exe</dd></div>
+              </dl>
+              <div className="checksum"><span>SHA-256</span><code>4824661861d65c03a754af45f7cc9cf937f0ca5f9511017d8acd44b05a843a71</code></div>
+              <ul className="release-trust">
+                <li><span aria-hidden="true">✓</span> Có thể kiểm tra tính toàn vẹn bộ cài</li>
+                <li><span aria-hidden="true">✓</span> Link tải theo từng phiên bản</li>
+                <li><span aria-hidden="true">✓</span> Không tự động gửi hồ sơ lên máy chủ</li>
+              </ul>
+            </aside>
+          </section>
 
           <section className="pricing" id="goi-dich-vu" aria-labelledby="pricing-title">
             <div className="section-heading split-heading pricing-heading">
