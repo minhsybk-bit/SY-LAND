@@ -3,6 +3,8 @@ import ValueCalculator from "./value-calculator";
 import TrialRequest from "./trial-request";
 import ChatAssistant from "./chat-assistant";
 import SoftwareRelease from "./software-release";
+import PdfToolkit from "./pdf-toolkit";
+import AccountPortal from "./account-portal";
 
 const features = [
   {
@@ -125,8 +127,10 @@ export default function Home() {
             <a href="#tinh-nang">Tính năng</a>
             <a href="#quy-trinh">Quy trình</a>
             <a href="#minh-hoa">Xử lý tệp</a>
+            <a href="#cong-cu-pdf">Công cụ PDF</a>
             <a href="#chuc-nang-phan-mem">Phần mềm</a>
             <a href="#tai-phan-mem">Tải phần mềm</a>
+            <a href="#tai-khoan">Tài khoản</a>
             <a href="#goi-dich-vu">Gói dịch vụ</a>
             <a href="#gioi-thieu">Giới thiệu</a>
           </nav>
@@ -230,6 +234,7 @@ export default function Home() {
             <p className="prototype-note live-note"><span aria-hidden="true">●</span> Công cụ đang hoạt động · Xử lý cục bộ</p>
           </div>
           <FileProcessor />
+          <PdfToolkit />
 
           <section className="software-capabilities" id="chuc-nang-phan-mem" aria-labelledby="software-capabilities-title">
             <div className="section-heading split-heading">
@@ -247,6 +252,7 @@ export default function Home() {
           </section>
 
           <SoftwareRelease />
+          <AccountPortal />
 
           <section className="pricing" id="goi-dich-vu" aria-labelledby="pricing-title">
             <div className="section-heading split-heading pricing-heading">

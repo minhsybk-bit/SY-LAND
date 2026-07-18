@@ -9,11 +9,12 @@
     "fflate": "^0.8.3",
     "mammoth": "^1.12.0",
     "pdfjs-dist": "^6.1.200",
+    "pdf-lib": "^1.17.1",
     "react": "19.2.6",
     "react-dom": "19.2.6",
     "tesseract.js": "^7.0.0",
     "tailwindcss": "4.2.1",
-"@tailwindcss/postcss": "4.2.1",
+    "@tailwindcss/postcss": "4.2.1",
     "vite": "8.0.13",
     "xlsx": "^0.18.5"
   }
