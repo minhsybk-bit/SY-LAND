@@ -4,7 +4,8 @@ import { ChangeEvent, useMemo, useRef, useState } from "react";
 
 type Mode = "split" | "merge" | "rotate" | "organize" | "resize" | "annotate" | "optimize" | "compare" | "sanitize" | "ocr" | "compress";
 type PagePreview = { page: number; image: string };
-type CompareResult = { pagesA: number; pagesB: number; changedPages: number[]; samePages: number; textCoverage: number };
+type PageComparison = { page: number; similarity: number | null; status: "same" | "review" | "changed" | "missing" | "scan"; note: string };
+type CompareResult = { pagesA: number; pagesB: number; changedPages: number[]; samePages: number; reviewPages: number; scanPages: number; textCoverage: number; details: PageComparison[] };
 
 function downloadBlob(bytes: Uint8Array, name: string, type = "application/pdf") {
   const blob = new Blob([bytes as BlobPart], { type });
@@ -36,6 +37,19 @@ function parseRanges(input: string, total: number) {
   });
   if (!groups.length) throw new Error("Hãy nhập trang cần tách, ví dụ 1-3, 5, 8-10.");
   return groups;
+}
+
+function normalizeCompareText(input: string) {
+  return input.normalize("NFKC").toLocaleLowerCase("vi").replace(/[\u00ad\u200b-\u200d\ufeff]/g, "").replace(/\s+/g, " ").replace(/\s+([,.;:!?%)])/g, "$1").trim();
+}
+
+function textSimilarity(left: string, right: string) {
+  if (left === right) return 100;
+  const leftTokens = left.split(/\s+/).filter(Boolean); const rightTokens = right.split(/\s+/).filter(Boolean);
+  if (!leftTokens.length || !rightTokens.length) return 0;
+  const counts = new Map<string, number>(); leftTokens.forEach((token) => counts.set(token, (counts.get(token) || 0) + 1));
+  let overlap = 0; rightTokens.forEach((token) => { const count = counts.get(token) || 0; if (count > 0) { overlap++; counts.set(token, count - 1); } });
+  return Math.round((2 * overlap / (leftTokens.length + rightTokens.length)) * 1000) / 10;
 }
 
 export default function PdfToolkit() {
@@ -119,20 +133,27 @@ export default function PdfToolkit() {
           const pages: string[] = [];
           for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber++) {
             const content = await (await document.getPage(pageNumber)).getTextContent();
-            pages.push(content.items.map((item) => "str" in item ? item.str : "").join(" ").replace(/\s+/g, " ").trim().toLocaleLowerCase("vi"));
+            pages.push(normalizeCompareText(content.items.map((item) => "str" in item ? item.str : "").join(" ")));
           }
           texts.push(pages);
         }
         const maximum = Math.max(texts[0].length, texts[1].length);
-        const changedPages: number[] = [];
-        let samePages = 0; let pagesWithText = 0;
+        const changedPages: number[] = []; const details: PageComparison[] = [];
+        let samePages = 0; let reviewPages = 0; let scanPages = 0; let pagesWithText = 0;
         for (let index = 0; index < maximum; index++) {
           const left = texts[0][index] || ""; const right = texts[1][index] || "";
           if (left || right) pagesWithText++;
-          if (left === right && index < texts[0].length && index < texts[1].length) samePages++; else changedPages.push(index + 1);
+          const page = index + 1;
+          if (index >= texts[0].length || index >= texts[1].length) { changedPages.push(page); details.push({ page, similarity: null, status: "missing", note: index >= texts[0].length ? "Chỉ có trong bản B" : "Chỉ có trong bản A" }); continue; }
+          if (!left && !right) { scanPages++; details.push({ page, similarity: null, status: "scan", note: "Cả hai trang không có lớp chữ; cần OCR" }); continue; }
+          if (!left || !right) { scanPages++; details.push({ page, similarity: null, status: "scan", note: "Một bản không có lớp chữ; cần OCR" }); continue; }
+          const similarity = textSimilarity(left, right);
+          if (similarity >= 99.5) { samePages++; details.push({ page, similarity, status: "same", note: "Nội dung trùng khớp" }); }
+          else if (similarity >= 92) { reviewPages++; details.push({ page, similarity, status: "review", note: "Khác biệt nhỏ; nên kiểm tra" }); }
+          else { changedPages.push(page); details.push({ page, similarity, status: "changed", note: "Nội dung thay đổi đáng kể" }); }
         }
-        setCompareResult({ pagesA: texts[0].length, pagesB: texts[1].length, changedPages, samePages, textCoverage: maximum ? Math.round(pagesWithText / maximum * 100) : 0 });
-        setNotice(changedPages.length ? `Phát hiện ${changedPages.length} trang khác nhau hoặc bị thêm/bớt.` : "Hai tệp có nội dung văn bản trùng khớp theo từng trang.");
+        setCompareResult({ pagesA: texts[0].length, pagesB: texts[1].length, changedPages, samePages, reviewPages, scanPages, textCoverage: maximum ? Math.round(pagesWithText / maximum * 100) : 0, details });
+        setNotice(changedPages.length ? `Phát hiện ${changedPages.length} trang thay đổi đáng kể hoặc bị thêm/bớt; ${reviewPages} trang có khác biệt nhỏ.` : scanPages ? `Không thấy thay đổi rõ ràng; còn ${scanPages} trang scan cần OCR để kết luận.` : reviewPages ? `Có ${reviewPages} trang khác biệt nhỏ cần kiểm tra.` : "Hai tệp có nội dung văn bản trùng khớp theo từng trang.");
         return;
       }
       if (mode === "ocr") {
@@ -311,12 +332,12 @@ export default function PdfToolkit() {
             {mode === "resize" && <div className="resize-info"><span>A3</span><b>→</b><span>A4</span><div><h3>Chuyển toàn bộ trang về A4</h3><p>Giữ tỷ lệ nội dung, tự nhận hướng dọc/ngang và căn giữa để thuận tiện in hoặc ký số.</p></div></div>}
             {mode === "annotate" && <><h3>Đánh dấu tài liệu</h3><div className="annotate-options"><label className="annotate-check"><input type="checkbox" checked={addWatermark} onChange={(event) => setAddWatermark(event.target.checked)} /><span>Thêm dấu bản quyền</span></label><label>Nội dung dấu<input value={watermark} maxLength={60} disabled={!addWatermark} onChange={(event) => setWatermark(event.target.value)} placeholder="Ví dụ: SỸ LAND - BẢN KIỂM TRA" /><small>Chữ tiếng Việt được tự chuyển sang không dấu để tương thích PDF.</small></label><label className="annotate-check"><input type="checkbox" checked={addNumbers} onChange={(event) => setAddNumbers(event.target.checked)} /><span>Thêm số trang</span></label><div className="number-config"><label>Bắt đầu từ<input type="number" min="1" value={numberStart} disabled={!addNumbers} onChange={(event) => setNumberStart(Math.max(1, Number(event.target.value) || 1))} /></label><label>Vị trí<select value={numberPosition} disabled={!addNumbers} onChange={(event) => setNumberPosition(event.target.value as "bottom" | "top")}><option value="bottom">Giữa chân trang</option><option value="top">Giữa đầu trang</option></select></label></div></div></>}
             {mode === "optimize" && <div className="optimize-info"><span>⇣</span><div><h3>Tối ưu cấu trúc PDF</h3><p>Sắp xếp lại đối tượng và luồng dữ liệu để giảm dung lượng khi có thể. Công cụ không hạ độ phân giải ảnh nên giữ nguyên chất lượng hồ sơ scan.</p><ul><li>Không xóa nội dung</li><li>Không giảm chất lượng ảnh</li><li>Kết quả phụ thuộc cấu trúc tệp gốc</li></ul></div></div>}
-            {mode === "compare" && <><div className="compare-files">{files.map((file, index) => <article key={`${file.name}-${file.lastModified}`}><span>{index ? "B" : "A"}</span><div><b>{file.name}</b><small>{(file.size / 1024 / 1024).toFixed(1)} MB</small></div></article>)}</div>{compareResult && <div className="compare-result"><div><strong>{compareResult.pagesA}</strong><span>Trang bản A</span></div><div><strong>{compareResult.pagesB}</strong><span>Trang bản B</span></div><div><strong>{compareResult.samePages}</strong><span>Trang trùng khớp</span></div><div><strong>{compareResult.changedPages.length}</strong><span>Trang thay đổi</span></div><p><b>Trang cần kiểm tra:</b> {compareResult.changedPages.length ? compareResult.changedPages.slice(0, 100).join(", ") : "Không có"}{compareResult.changedPages.length > 100 ? "…" : ""}</p><small>Độ phủ văn bản: {compareResult.textCoverage}%. PDF scan không có lớp chữ cần OCR trước để so sánh chính xác.</small></div>}</>}
+            {mode === "compare" && <><div className="compare-files">{files.map((file, index) => <article key={`${file.name}-${file.lastModified}`}><span>{index ? "B" : "A"}</span><div><b>{file.name}</b><small>{(file.size / 1024 / 1024).toFixed(1)} MB</small></div></article>)}</div>{compareResult && <div className="compare-result"><div><strong>{compareResult.pagesA}</strong><span>Trang bản A</span></div><div><strong>{compareResult.pagesB}</strong><span>Trang bản B</span></div><div><strong>{compareResult.samePages}</strong><span>Trùng khớp</span></div><div><strong>{compareResult.reviewPages}</strong><span>Khác biệt nhỏ</span></div><div><strong>{compareResult.changedPages.length}</strong><span>Thay đổi lớn</span></div><div><strong>{compareResult.scanPages}</strong><span>Cần OCR</span></div><p><b>Trang thay đổi lớn/thêm/bớt:</b> {compareResult.changedPages.length ? compareResult.changedPages.slice(0, 100).join(", ") : "Không có"}{compareResult.changedPages.length > 100 ? "…" : ""}</p><div className="compare-detail-list">{compareResult.details.filter((item) => item.status !== "same").slice(0, 40).map((item) => <span className={`compare-${item.status}`} key={item.page}>Trang {item.page}: {item.similarity === null ? "—" : `${item.similarity}%`} · {item.note}</span>)}</div><small>Độ phủ văn bản: {compareResult.textCoverage}%. Ngưỡng: ≥99,5% trùng khớp; 92–99,4% cần kiểm tra; dưới 92% thay đổi đáng kể.</small></div>}</>}
             {mode === "sanitize" && <div className="optimize-info"><span>⌫</span><div><h3>Làm sạch metadata</h3><p>Xóa tiêu đề, tác giả, chủ đề và từ khóa ẩn trong PDF trước khi gửi cho người khác. Nội dung và hình ảnh hiển thị được giữ nguyên.</p><ul><li>Không xóa chữ ký hoặc chú thích hiển thị</li><li>Không thay thế việc kiểm tra dữ liệu cá nhân trong nội dung</li><li>Tạo tệp mới, không ghi đè bản gốc</li></ul></div></div>}
             {mode === "ocr" && <div className="optimize-info"><span>OCR</span><div><h3>Nhận dạng chữ tiếng Việt</h3><p>Chuyển từng trang scan thành văn bản TXT có phân cách trang. Xử lý cục bộ, tối đa 40 trang mỗi lượt.</p><ul><li>Kết quả OCR cần được người dùng kiểm tra lại</li><li>Không tự động thay thế dữ liệu hồ sơ gốc</li><li>Độ chính xác phụ thuộc chất lượng bản scan</li></ul></div></div>}
             {mode === "compress" && <><h3>Mức nén hình ảnh</h3><div className="compression-options">{([{ key: "small", title: "Dung lượng nhỏ", note: "Phù hợp gửi xem nhanh" }, { key: "balanced", title: "Cân bằng", note: "Khuyến nghị cho hồ sơ thông thường" }, { key: "clear", title: "Rõ nét", note: "Ưu tiên chữ nhỏ và bản đồ" }] as const).map((item) => <label key={item.key}><input type="radio" checked={compressQuality === item.key} onChange={() => setCompressQuality(item.key)} /><span><b>{item.title}</b><small>{item.note}</small></span></label>)}</div><p className="compression-warning"><b>Lưu ý:</b> Bản nén được dựng lại từ ảnh từng trang nên có thể mất lớp chữ tìm kiếm, liên kết, biểu mẫu và trạng thái chữ ký số. Luôn giữ tệp gốc.</p></>}
             {mode !== "merge" && mode !== "organize" && mode !== "compare" && files[0] && <div className="single-pdf"><span>✓</span><p><b>{files[0].name}</b><small>{(files[0].size / 1024 / 1024).toFixed(1)} MB</small></p><button type="button" onClick={() => setFiles([])}>×</button></div>}
-            <div className="pdf-run"><p className={notice.includes("Không") ? "error" : ""}>{notice || (files.length ? `${files.length} tệp · ${(totalSize / 1024 / 1024).toFixed(1)} MB` : "Kết quả sẽ được tải về thiết bị.")}</p><div className="pdf-run-actions">{mode === "compare" && compareResult && <button className="secondary-pdf-action" type="button" onClick={() => { const rows = ["Chi_tieu,Ban_A,Ban_B", `Ten_tep,\"${files[0].name.replace(/\"/g, '\"\"')}\",\"${files[1].name.replace(/\"/g, '\"\"')}\"`, `So_trang,${compareResult.pagesA},${compareResult.pagesB}`, `Trang_trung_khop,${compareResult.samePages},`, `Trang_thay_doi,\"${compareResult.changedPages.join("; ")}\",`, `Do_phu_van_ban,${compareResult.textCoverage}%,`]; downloadText("\uFEFF" + rows.join("\r\n"), `SYLAND_BAO_CAO_SO_SANH_${Date.now()}.csv`, "text/csv;charset=utf-8"); }}>Tải báo cáo CSV</button>}<button type="button" disabled={busy || !files.length || (mode === "compare" && files.length !== 2) || (mode === "organize" && !previews.length)} onClick={() => void run()}>{busy ? "Đang xử lý…" : mode === "merge" ? "Nối PDF" : mode === "rotate" ? "Xoay và tải PDF" : mode === "organize" ? "Xuất PDF đã sắp xếp" : mode === "resize" ? "Chuyển và tải PDF A4" : mode === "annotate" ? "Thêm dấu và tải PDF" : mode === "optimize" ? "Tối ưu và tải PDF" : mode === "compare" ? "So sánh hai PDF" : mode === "sanitize" ? "Làm sạch và tải PDF" : mode === "ocr" ? "OCR và tải TXT" : mode === "compress" ? "Nén và tải PDF" : "Tách và tải kết quả"}</button></div></div>
+            <div className="pdf-run"><p className={notice.includes("Không") ? "error" : ""}>{notice || (files.length ? `${files.length} tệp · ${(totalSize / 1024 / 1024).toFixed(1)} MB` : "Kết quả sẽ được tải về thiết bị.")}</p><div className="pdf-run-actions">{mode === "compare" && compareResult && <button className="secondary-pdf-action" type="button" onClick={() => { const rows = ["Trang,Ty_le_tuong_dong,Phan_loai,Ghi_chu", ...compareResult.details.map((item) => `${item.page},${item.similarity === null ? "" : item.similarity + "%"},${item.status},\"${item.note.replace(/\"/g, '\"\"')}\"`)]; rows.unshift(`Tep_B,\"${files[1].name.replace(/\"/g, '\"\"')}\"`, `Tep_A,\"${files[0].name.replace(/\"/g, '\"\"')}\"`); downloadText("\uFEFF" + rows.join("\r\n"), `SYLAND_BAO_CAO_SO_SANH_${Date.now()}.csv`, "text/csv;charset=utf-8"); }}>Tải báo cáo CSV</button>}<button type="button" disabled={busy || !files.length || (mode === "compare" && files.length !== 2) || (mode === "organize" && !previews.length)} onClick={() => void run()}>{busy ? "Đang xử lý…" : mode === "merge" ? "Nối PDF" : mode === "rotate" ? "Xoay và tải PDF" : mode === "organize" ? "Xuất PDF đã sắp xếp" : mode === "resize" ? "Chuyển và tải PDF A4" : mode === "annotate" ? "Thêm dấu và tải PDF" : mode === "optimize" ? "Tối ưu và tải PDF" : mode === "compare" ? "So sánh hai PDF" : mode === "sanitize" ? "Làm sạch và tải PDF" : mode === "ocr" ? "OCR và tải TXT" : mode === "compress" ? "Nén và tải PDF" : "Tách và tải kết quả"}</button></div></div>
           </div>
         </div>
       </div>
