@@ -125,7 +125,7 @@ export default function Home() {
 
         <div className="hero-grid page-shell" id="top">
           <div className="hero-copy">
-            <p className="eyebrow"><span className="ai-glyph" aria-hidden="true">AI</span>Nền tảng AI cho nghiệp vụ địa chính</p>
+            <p className="eyebrow"><span className="ai-glyph" aria-hidden="true">AI</span>Tiện ích hỗ trợ làm sạch CSDL đất đai SỸ LAND</p>
             <h1 id="hero-title">Quản lý đất đai<br />rõ ràng hơn.<br /><span>Nhanh hơn.</span></h1>
             <p className="hero-description">
               Hỗ trợ soạn thảo văn bản hành chính, xử lý dữ liệu địa chính,
@@ -222,7 +222,7 @@ export default function Home() {
 
           <section className="software-release" id="tai-phan-mem" aria-labelledby="release-title">
             <div className="release-copy">
-              <p className="section-kicker">Phần mềm SỸ LAND cho Windows</p>
+              <p className="section-kicker">Tiện ích hỗ trợ làm sạch CSDL đất đai SỸ LAND</p>
               <h2 id="release-title">Xử lý hồ sơ ngay trên máy tính.<br />Chủ động và riêng tư hơn.</h2>
               <p>Bản cài đặt dành cho người dùng cần xử lý số lượng hồ sơ lớn, làm việc ngoại tuyến và sử dụng các công cụ chuyên sâu trên Windows.</p>
               <div className="release-actions">
@@ -274,13 +274,13 @@ export default function Home() {
 
           <div className="vision" id="gioi-thieu">
             <div><p className="section-kicker">Định hướng dự án</p><h2>Giảm thao tác lặp lại.<br />Tăng thời gian cho chuyên môn.</h2></div>
-            <div className="vision-copy"><p>Trợ lý AI Quản lý Đất đai được định hướng như một lớp hỗ trợ an toàn cho nghiệp vụ hành chính: làm nhanh phần tổng hợp, giữ rõ nguồn dữ liệu và luôn dành bước rà soát cuối cho chuyên viên.</p><a className="button button-light" href="#top">Trở lại đầu trang <span aria-hidden="true">↑</span></a></div>
+            <div className="vision-copy"><p>Tiện ích hỗ trợ làm sạch CSDL đất đai SỸ LAND được định hướng như một lớp hỗ trợ an toàn cho nghiệp vụ hành chính: làm nhanh phần tổng hợp, giữ rõ nguồn dữ liệu và luôn dành bước rà soát cuối cho chuyên viên.</p><a className="button button-light" href="#top">Trở lại đầu trang <span aria-hidden="true">↑</span></a></div>
           </div>
         </div>
       </section>
 
       <footer className="site-footer">
-        <div className="page-shell"><a className="brand footer-brand" href="#top"><span className="brand-mark" aria-hidden="true"><i /><i /><i /><i /></span><span>SỸ LAND</span></a><p>Trợ lý AI Quản lý Đất đai · Định hướng sản phẩm thương mại</p><span>2026 · Bản thử nghiệm công khai</span></div>
+        <div className="page-shell"><a className="brand footer-brand" href="#top"><span className="brand-mark" aria-hidden="true"><i /><i /><i /><i /></span><span>SỸ LAND</span></a><p>Tiện ích hỗ trợ làm sạch CSDL đất đai SỸ LAND</p><span>2026 · Bản thử nghiệm công khai</span></div>
       </footer>
       <ChatAssistant />
     </main>
