@@ -1,6 +1,7 @@
 import FileProcessor from "./file-processor";
 import ValueCalculator from "./value-calculator";
 import TrialRequest from "./trial-request";
+import ChatAssistant from "./chat-assistant";
 
 const features = [
   {
@@ -281,6 +282,7 @@ export default function Home() {
       <footer className="site-footer">
         <div className="page-shell"><a className="brand footer-brand" href="#top"><span className="brand-mark" aria-hidden="true"><i /><i /><i /><i /></span><span>SỸ LAND</span></a><p>Trợ lý AI Quản lý Đất đai · Định hướng sản phẩm thương mại</p><span>2026 · Bản thử nghiệm công khai</span></div>
       </footer>
+      <ChatAssistant />
     </main>
   );
 }
