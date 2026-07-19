@@ -23,13 +23,15 @@ Kết nối hỗ trợ đã cấu hình:
 
 Tên sản phẩm hiển thị: Tiện ích hỗ trợ làm sạch CSDL đất đai SỸ LAND.
 
-Website tự đọc GitHub Release mới nhất. Từ phiên bản sau chỉ cần tạo Release mới và tải bộ cài .exe lên; không phải sửa lại số phiên bản trên website.
+Website tự đọc GitHub Release mới nhất. Từ phiên bản sau chỉ cần tạo Release mới và tải gói ZIP hoặc bộ cài EXE lên; không phải sửa lại số phiên bản trên website.
+
+Khu vực tải phần mềm có công cụ kiểm tra SHA-256. Người dùng chọn tệp ZIP hoặc EXE đã tải; website tính mã ngay trên thiết bị và thông báo khớp/không khớp với mã của bản phát hành. Tệp cài đặt không được tải lên máy chủ. Nếu báo không khớp, không nên cài đặt tệp đó.
 
 Phần xử lý tệp đã hỗ trợ khai báo địa bàn toàn quốc: tỉnh mới/cũ, xã mới/cũ, mã xã, thôn–bản–xóm mới/cũ và tên gọi khác. Các mã 02140, 02143, 02146 chỉ còn là dữ liệu mẫu.
 
-Bộ công cụ PDF địa chính đã có: tách theo khoảng, xuất trang đã chọn, tách mỗi trang thành một tệp, nối nhiều PDF theo thứ tự, xoay toàn bộ trang, xem trước/xóa/sắp xếp tối đa 80 trang, chuyển PDF A3 hoặc khổ khác về A4, đánh số trang, thêm dấu bản quyền, tối ưu cấu trúc, so sánh hai phiên bản, xuất báo cáo so sánh CSV, làm sạch metadata, OCR tiếng Việt và nén ảnh PDF theo ba mức chất lượng. Mọi thao tác chạy cục bộ trên thiết bị.
+Bộ công cụ PDF địa chính đã có: tách theo khoảng, nhập danh sách trang, chọn trang trực quan bằng ảnh thu nhỏ, tự chia đều mỗi N trang, tùy chỉnh tiền tố tên tệp kết quả, tách mỗi trang thành một tệp, nối nhiều PDF theo thứ tự, xoay toàn bộ trang, xem trước/xóa/sắp xếp tối đa 80 trang, tìm và đề xuất loại trang trùng lặp, chuyển PDF A3 hoặc khổ khác về A4, chuyển trang PDF thành JPG/PNG theo ba mức độ phân giải, đánh số trang, thêm dấu bản quyền, tối ưu cấu trúc, so sánh hai phiên bản, xuất báo cáo so sánh CSV, làm sạch metadata, OCR tiếng Việt và nén ảnh PDF theo ba mức chất lượng. Mọi thao tác chạy cục bộ trên thiết bị. Chọn trang trực quan hỗ trợ 80 trang đầu; tài liệu dài hơn sử dụng chế độ nhập khoảng/trang hoặc chia đều. Tìm trang trùng hỗ trợ tối đa 150 trang, chỉ đánh dấu khi ảnh kiểm tra khớp hoàn toàn, giữ trang đầu mỗi nhóm và không sửa tệp gốc. PDF sang ảnh hỗ trợ chọn trang/khoảng và tối đa 80 trang mỗi lượt; kết quả được đóng gói ZIP.
 
-Giới hạn cần công bố rõ: OCR hỗ trợ tối đa 40 trang mỗi lượt và kết quả cần được kiểm tra lại, đặc biệt tên riêng, số thửa và diện tích. So sánh PDF dựa trên lớp văn bản theo từng trang; hồ sơ scan chưa có lớp chữ cần OCR trước. Nén ảnh hỗ trợ tối đa 80 trang, có thể làm mất lớp chữ tìm kiếm, liên kết, biểu mẫu và trạng thái chữ ký số tương tác; luôn giữ tệp gốc. Tối ưu cấu trúc giữ nguyên chất lượng ảnh nên có thể không giảm nhiều dung lượng đối với PDF scan chứa ảnh.
+Giới hạn cần công bố rõ: OCR hỗ trợ tối đa 40 trang mỗi lượt và kết quả cần được kiểm tra lại, đặc biệt tên riêng, số thửa và diện tích. So sánh PDF chuẩn hóa văn bản rồi tính tỷ lệ tương đồng từng trang: từ 99,5% là trùng khớp; 92–99,4% là khác biệt nhỏ cần kiểm tra; dưới 92% là thay đổi đáng kể. Trang scan chưa có lớp chữ được tách riêng, không tự kết luận là thay đổi và cần OCR trước. Báo cáo CSV ghi chi tiết tỷ lệ và phân loại từng trang. Nén ảnh hỗ trợ tối đa 80 trang, có thể làm mất lớp chữ tìm kiếm, liên kết, biểu mẫu và trạng thái chữ ký số tương tác; luôn giữ tệp gốc. Tối ưu cấu trúc giữ nguyên chất lượng ảnh nên có thể không giảm nhiều dung lượng đối với PDF scan chứa ảnh.
 
 Tài khoản hiện là chế độ kiểm thử cục bộ. Lần đầu mở mục Tài khoản, Nguyễn Minh Sỹ tự nhập email và đặt mật khẩu admin tối thiểu 8 ký tự. Không có mật khẩu mặc định trong mã nguồn. Tài khoản, phiên đăng nhập và báo cáo lỗi chỉ lưu trên trình duyệt đang sử dụng.
 
