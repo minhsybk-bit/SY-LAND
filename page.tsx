@@ -6,6 +6,7 @@ import SoftwareRelease from "./software-release";
 import PdfToolkit from "./pdf-toolkit";
 import AccountPortal from "./account-portal";
 import SystemCheck from "./system-check";
+import SupportCenter from "./support-center";
 
 const features = [
   {
@@ -255,6 +256,7 @@ export default function Home() {
           <SoftwareRelease />
           <SystemCheck />
           <AccountPortal />
+          <SupportCenter />
 
           <section className="pricing" id="goi-dich-vu" aria-labelledby="pricing-title">
             <div className="section-heading split-heading pricing-heading">

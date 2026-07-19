@@ -8,6 +8,7 @@ type License = { id: string; code: string; customer: string; email: string; plan
 type DeviceActivation = { id: string; licenseId: string; deviceHash: string; deviceName: string; appVersion: string; status: "Hoạt động" | "Đã hủy"; firstSeenAt: string; lastSeenAt: string };
 type AuditEvent = { id: string; action: string; entityType: string; entityId: string; details: Record<string, unknown>; createdAt: string };
 type Lead = { id: string; unit: string; contact: string; monthlyVolume: number; people: number; needs: string[]; proposedPlan: string; note: string; status: "Mới" | "Đang liên hệ" | "Đã chuyển đổi" | "Đã đóng"; createdAt: string };
+type SupportTicket = { id: string; ticketCode: string; title: string; category: string; priority: string; details: string; status: "Mới" | "Đang xử lý" | "Chờ người dùng" | "Đã giải quyết" | "Đã đóng"; appVersion: string; createdAt: string };
 
 const ACCOUNT_KEY = "sy-land-test-accounts";
 const SESSION_KEY = "sy-land-test-session";
@@ -74,6 +75,7 @@ export default function AccountPortal() {
   const [devices, setDevices] = useState<DeviceActivation[]>([]);
   const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [licenseDraft, setLicenseDraft] = useState({ customer: "", email: "", plan: "Cá nhân" as License["plan"], months: 12, maxDevices: 1 });
   const [activationCode, setActivationCode] = useState("");
   const [activations, setActivations] = useState<Record<string, string>>({});
@@ -102,6 +104,8 @@ export default function AccountPortal() {
         if (Array.isArray(eventRows)) setAuditEvents(eventRows.map((item: any) => ({ id: item.id, action: item.action, entityType: item.entity_type, entityId: item.entity_id, details: item.details || {}, createdAt: item.created_at })));
         const leadRows = await remoteData(`/leads?select=id,unit,contact,monthly_volume,people,needs,proposed_plan,note,status,created_at&order=created_at.desc&limit=100`, accessToken);
         if (Array.isArray(leadRows)) setLeads(leadRows.map((item: any) => ({ id: item.id, unit: item.unit, contact: item.contact, monthlyVolume: item.monthly_volume, people: item.people, needs: item.needs || [], proposedPlan: item.proposed_plan, note: item.note || "", status: item.status, createdAt: item.created_at })));
+        const ticketRows = await remoteData(`/support_tickets?select=id,ticket_code,title,category,priority,details,status,app_version,created_at&order=created_at.desc&limit=100`, accessToken);
+        if (Array.isArray(ticketRows)) setTickets(ticketRows.map((item: any) => ({ id: item.id, ticketCode: item.ticket_code, title: item.title, category: item.category, priority: item.priority, details: item.details, status: item.status, appVersion: item.app_version, createdAt: item.created_at })));
       }
     } catch (reason) {
       setMessage(reason instanceof Error ? `${reason.message} Hãy chạy tệp SUPABASE_SCHEMA.sql.` : "Chưa đồng bộ được hồ sơ máy chủ.");
@@ -268,6 +272,15 @@ export default function AccountPortal() {
     } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Không cập nhật được yêu cầu."); }
   }
 
+  async function updateTicket(id: string, status: SupportTicket["status"]) {
+    if (!remoteToken || current?.role !== "admin") return;
+    try {
+      await remoteData(`/support_tickets?id=eq.${encodeURIComponent(id)}`, remoteToken, { method: "PATCH", payload: { status } });
+      setTickets((items) => items.map((item) => item.id === id ? { ...item, status } : item));
+      setMessage("Đã cập nhật trạng thái hỗ trợ.");
+    } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Không cập nhật được yêu cầu hỗ trợ."); }
+  }
+
   function activateLicense(event: FormEvent) {
     event.preventDefault();
     if (!current) return;
@@ -287,6 +300,7 @@ export default function AccountPortal() {
       {current.role === "admin" ? <div className="admin-grid">
         <aside className="admin-menu"><span>QUẢN TRỊ KIỂM THỬ</span><a href="#minh-hoa">Xử lý Word/PDF/Excel</a><a href="#cong-cu-pdf">Bộ công cụ PDF</a><a href="#chuc-nang-phan-mem">Kiểm tra chức năng</a><a href="#tai-phan-mem">Kiểm tra bản phát hành</a><button type="button" onClick={() => downloadJson(reports, `SYLAND_BAO_CAO_LOI_${new Date().toISOString().slice(0,10)}.json`)} disabled={!reports.length}>Xuất báo cáo lỗi JSON</button><button type="button" onClick={() => downloadJson(licenses, `SYLAND_BAN_QUYEN_${new Date().toISOString().slice(0,10)}.json`)} disabled={!licenses.length}>Xuất bản quyền JSON</button><small>Dữ liệu tài khoản, bản quyền và lỗi chỉ tồn tại trên trình duyệt này.</small></aside>
         <div className="bug-workspace">
+          {REMOTE_AUTH && <section className="license-workspace"><div className="license-heading"><div><h3>Yêu cầu hỗ trợ kỹ thuật</h3><p>Tiếp nhận và theo dõi vấn đề của người dùng đã đăng nhập.</p></div><span>{tickets.filter((item) => item.status === "Mới").length} MỚI</span></div><div className="license-list">{!tickets.length ? <p>Chưa có yêu cầu hỗ trợ.</p> : tickets.map((item) => <article key={item.id}><div><strong>{item.ticketCode} · {item.title}</strong><code>{item.priority}</code><small>{item.category} · {item.appVersion || "—"} · {new Date(item.createdAt).toLocaleString("vi-VN")}</small></div><select value={item.status} onChange={(event) => void updateTicket(item.id, event.target.value as SupportTicket["status"])}><option>Mới</option><option>Đang xử lý</option><option>Chờ người dùng</option><option>Đã giải quyết</option><option>Đã đóng</option></select></article>)}</div></section>}
           {REMOTE_AUTH && <section className="license-workspace"><div className="license-heading"><div><h3>Yêu cầu tư vấn và mua bản quyền</h3><p>Theo dõi khách hàng từ lúc gửi nhu cầu đến khi hoàn tất.</p></div><span>{leads.filter((item) => item.status === "Mới").length} MỚI</span></div><div className="license-list">{!leads.length ? <p>Chưa có yêu cầu tư vấn.</p> : leads.map((item) => <article key={item.id}><div><strong>{item.unit}</strong><code>{item.proposedPlan}</code><small>{item.contact} · {item.monthlyVolume.toLocaleString("vi-VN")} hồ sơ/tháng · {item.people} người · {new Date(item.createdAt).toLocaleString("vi-VN")}</small></div><select value={item.status} onChange={(event) => void updateLead(item.id, event.target.value as Lead["status"])}><option>Mới</option><option>Đang liên hệ</option><option>Đã chuyển đổi</option><option>Đã đóng</option></select></article>)}</div></section>}
           {REMOTE_AUTH && <section className="license-workspace"><div className="license-heading"><div><h3>Thiết bị đã kích hoạt</h3><p>Hủy thiết bị mất quyền hoặc mở lại thiết bị hợp lệ.</p></div><span>{devices.filter((item) => item.status === "Hoạt động").length} MÁY</span></div><div className="license-list">{!devices.length ? <p>Chưa có thiết bị đăng nhập phần mềm.</p> : devices.slice(0, 50).map((item) => { const license = licenses.find((value) => value.id === item.licenseId); return <article key={item.id}><div><strong>{item.deviceName || "Windows PC"}</strong><code>{item.deviceHash.slice(0, 8)}••••</code><small>{license?.email || license?.code || "Chưa xác định bản quyền"} · Bản {item.appVersion || "—"} · Gần nhất {new Date(item.lastSeenAt).toLocaleString("vi-VN")}</small></div><button type="button" className={item.status === "Hoạt động" ? "active" : "locked"} onClick={() => toggleDevice(item.id)}>{item.status}</button></article>; })}</div></section>}
           {REMOTE_AUTH && <section className="license-workspace"><div className="license-heading"><div><h3>Nhật ký quản trị</h3><p>50 sự kiện mới nhất liên quan tới bản quyền và thiết bị.</p></div><span>KIỂM SOÁT</span></div><div className="license-list">{!auditEvents.length ? <p>Chưa có sự kiện quản trị.</p> : auditEvents.map((item) => <article key={item.id}><div><strong>{item.action}</strong><small>{item.entityType} · {new Date(item.createdAt).toLocaleString("vi-VN")}</small></div></article>)}</div></section>}
