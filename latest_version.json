@@ -1,0 +1,14 @@
+{
+  "app_name": "SỸ LAND",
+  "latest_version": "11.5.0",
+  "release_date": "2026-07-19",
+  "download_url": "https://github.com/minhsybk-bit/SY-LAND/releases/download/v11.5.0/SYLAND_Setup_11.5.0.zip",
+  "sha256": "7f97cd693f65b09f37970725b64c5a9a0c751210acbea3a579809030c89836cd",
+  "release_notes": [
+    "Đồng bộ tài khoản website và phần mềm",
+    "Bổ sung quản lý bản quyền theo thiết bị",
+    "Cải thiện xử lý Word, PDF, Excel và OCR",
+    "Cải thiện độ ổn định và thông báo lỗi"
+  ],
+  "force_update": false
+}
