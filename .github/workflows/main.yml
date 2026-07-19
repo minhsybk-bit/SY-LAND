@@ -43,6 +43,8 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
       - run: mv pages-dist/github-pages.html pages-dist/index.html
+      - name: Publish update manifest
+        run: cp latest_version.json pages-dist/latest_version.json
       - name: Copy favicon
         shell: bash
         run: |
