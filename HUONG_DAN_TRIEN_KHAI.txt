@@ -1,0 +1,50 @@
+THỐNG NHẤT TÀI KHOẢN WEBSITE VÀ PHẦN MỀM SỸ LAND
+
+KẾT QUẢ MÃ NGUỒN
+- Đã xóa đăng nhập mặc định admin/123 khỏi phần mềm.
+- Website và phần mềm cùng hỗ trợ Supabase Auth bằng email + mật khẩu.
+- Người dùng đăng ký ở website có thể đăng nhập phần mềm và ngược lại.
+- Chưa có cấu hình Supabase thì website giữ chế độ cục bộ; phần mềm từ chối đăng nhập và báo thiếu cấu hình, không tự mở bằng mật khẩu mặc định.
+
+BƯỚC 1 — TẠO MÁY CHỦ TÀI KHOẢN
+1. Đăng nhập https://supabase.com và tạo một project mới.
+2. Mở Authentication → Providers → Email, bật Email + Password.
+3. Mở Authentication → URL Configuration.
+4. Site URL: https://minhsybk-bit.github.io/SY-LAND/
+5. Thêm URL trên vào Redirect URLs.
+6. Mở Project Settings → API, ghi lại Project URL và anon/public key.
+
+LƯU Ý BẢO MẬT
+- Project URL và anon key là thông tin dành cho ứng dụng client.
+- TUYỆT ĐỐI không đưa service_role key vào website, phần mềm, GitHub hoặc cuộc trò chuyện.
+- Bật xác nhận email trước khi bán thương mại.
+
+BƯỚC 2 — WEBSITE
+1. Ghi đè account-portal.tsx bằng tệp trong thư mục WEBSITE.
+2. Ghi đè .github/workflows/pages.yml.
+3. Trong GitHub: Settings → Secrets and variables → Actions → New repository secret.
+4. Tạo VITE_SUPABASE_URL = Project URL.
+5. Tạo VITE_SUPABASE_ANON_KEY = anon/public key.
+6. Commit mã nguồn và chờ Actions triển khai lại.
+
+BƯỚC 3 — PHẦN MỀM WINDOWS
+1. Ghi đè doi_chieu_pdf.py.
+2. Chép account_service.py vào app/services/.
+3. Sao chép config/supabase_config.json.sample thành config/supabase_config.json.
+4. Điền Project URL và anon/public key vào supabase_config.json.
+5. Chạy python -m pip install -r requirements.txt.
+6. Chạy thử chay_thu.bat; đăng ký một email và kiểm tra đăng nhập trên website.
+7. Chạy build/build_exe.bat và biên dịch lại Inno Setup để tạo bộ cài mới.
+
+KIỂM THỬ BẮT BUỘC
+- Đăng ký trên web → xác nhận email → đăng nhập phần mềm.
+- Đăng ký trên phần mềm → xác nhận email → đăng nhập web.
+- Sai mật khẩu phải bị từ chối ở cả hai nơi.
+- Email chưa xác nhận phải xử lý theo chính sách Supabase đã cấu hình.
+- Không có Internet phải báo rõ, không được tự bỏ qua đăng nhập.
+- Kiểm tra quên mật khẩu và thu hồi phiên đăng nhập ở giai đoạn tiếp theo.
+
+PHẠM VI HIỆN TẠI
+- Đã thống nhất danh tính đăng ký/đăng nhập.
+- Bản quyền ngoại tuyến Ed25519 hiện vẫn tồn tại riêng để phần mềm có thể làm việc ngoại tuyến.
+- Bước tiếp theo là đưa quyền admin, gói dịch vụ, số thiết bị và trạng thái bản quyền lên cơ sở dữ liệu dùng chung.

@@ -23,7 +23,11 @@ jobs:
         with:
           node-version: 22
       - run: npm install
-      - run: npm run build
+      - name: Build website
+        run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
       - run: mv pages-dist/github-pages.html pages-dist/index.html
       - run: cp public/favicon.svg pages-dist/favicon.svg
       - uses: actions/configure-pages@v5

@@ -4,15 +4,24 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 
 type Account = { id: string; name: string; email: string; passwordHash: string; salt: string; role: "admin" | "user"; createdAt: string };
 type BugReport = { id: string; title: string; area: string; severity: string; steps: string; expected: string; actual: string; createdAt: string; status: "Mới" | "Đang kiểm tra" | "Đã xử lý" };
+type License = { id: string; code: string; customer: string; email: string; plan: "Cá nhân" | "Văn phòng" | "Đơn vị"; expiresAt: string; status: "Hoạt động" | "Đã khóa"; createdAt: string };
 
 const ACCOUNT_KEY = "sy-land-test-accounts";
 const SESSION_KEY = "sy-land-test-session";
 const BUG_KEY = "sy-land-bug-reports";
+const LICENSE_KEY = "sy-land-test-licenses";
+const ACTIVATION_KEY = "sy-land-test-activations";
+const REMOTE_SESSION_KEY = "sy-land-auth-session";
+const SUPABASE_URL = String(import.meta.env.VITE_SUPABASE_URL || "").replace(/\/$/, "");
+const SUPABASE_ANON_KEY = String(import.meta.env.VITE_SUPABASE_ANON_KEY || "");
+const REMOTE_AUTH = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 
 function bytesToHex(bytes: Uint8Array) { return Array.from(bytes).map((value) => value.toString(16).padStart(2, "0")).join(""); }
 function randomSalt() { const bytes = crypto.getRandomValues(new Uint8Array(16)); return bytesToHex(bytes); }
 async function hashPassword(password: string, salt: string) { return bytesToHex(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${salt}:${password}`)))); }
 function downloadJson(data: unknown, name: string) { const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" })); const anchor = document.createElement("a"); anchor.href = url; anchor.download = name; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
+function generateLicenseCode() { const bytes = crypto.getRandomValues(new Uint8Array(10)); const value = Array.from(bytes).map((item) => (item % 36).toString(36).toUpperCase()).join(""); return `SYL-${value.slice(0, 5)}-${value.slice(5)}`; }
+async function remoteAuth(path: string, payload: Record<string, unknown>) { const response = await fetch(`${SUPABASE_URL}/auth/v1${path}`, { method: "POST", headers: { apikey: SUPABASE_ANON_KEY, "Content-Type": "application/json" }, body: JSON.stringify(payload) }); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.msg || data.message || data.error_description || "Yêu cầu xác thực thất bại."); return data; }
 
 export default function AccountPortal() {
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -24,16 +33,30 @@ export default function AccountPortal() {
   const [confirm, setConfirm] = useState("");
   const [message, setMessage] = useState("");
   const [reports, setReports] = useState<BugReport[]>([]);
+  const [licenses, setLicenses] = useState<License[]>([]);
+  const [licenseDraft, setLicenseDraft] = useState({ customer: "", email: "", plan: "Cá nhân" as License["plan"], months: 12 });
+  const [activationCode, setActivationCode] = useState("");
+  const [activations, setActivations] = useState<Record<string, string>>({});
   const [report, setReport] = useState({ title: "", area: "Xử lý PDF", severity: "Trung bình", steps: "", expected: "", actual: "" });
   const current = useMemo(() => accounts.find((account) => account.id === sessionId) || null, [accounts, sessionId]);
+  const activeLicense = useMemo(() => {
+    if (!current) return null;
+    const code = activations[current.id];
+    const license = licenses.find((item) => item.code === code);
+    return license && license.status === "Hoạt động" && new Date(license.expiresAt) >= new Date() ? license : null;
+  }, [current, activations, licenses]);
 
   useEffect(() => {
     try {
       const storedAccounts = JSON.parse(localStorage.getItem(ACCOUNT_KEY) || "[]") as Account[];
-      setAccounts(storedAccounts);
+      const remoteSession = JSON.parse(localStorage.getItem(REMOTE_SESSION_KEY) || "null");
+      const remoteAccount = remoteSession?.account as Account | undefined;
+      setAccounts(remoteAccount ? [...storedAccounts.filter((item) => item.id !== remoteAccount.id), remoteAccount] : storedAccounts);
       setReports(JSON.parse(localStorage.getItem(BUG_KEY) || "[]"));
-      setSessionId(localStorage.getItem(SESSION_KEY) || "");
-      setMode(storedAccounts.some((account) => account.role === "admin") ? "login" : "setup");
+      setLicenses(JSON.parse(localStorage.getItem(LICENSE_KEY) || "[]"));
+      setActivations(JSON.parse(localStorage.getItem(ACTIVATION_KEY) || "{}"));
+      setSessionId(remoteAccount?.id || localStorage.getItem(SESSION_KEY) || "");
+      setMode(REMOTE_AUTH ? "login" : storedAccounts.some((account) => account.role === "admin") ? "login" : "setup");
     } catch { setMode("setup"); }
   }, []);
 
@@ -43,6 +66,22 @@ export default function AccountPortal() {
     event.preventDefault(); setMessage("");
     const normalizedEmail = email.trim().toLocaleLowerCase();
     if (!normalizedEmail || !password) { setMessage("Hãy nhập email và mật khẩu."); return; }
+    if (REMOTE_AUTH) {
+      try {
+        if (mode === "login") {
+          const data = await remoteAuth("/token?grant_type=password", { email: normalizedEmail, password });
+          const user = data.user;
+          const account: Account = { id: user.id, name: user.user_metadata?.full_name || normalizedEmail.split("@")[0], email: user.email, passwordHash: "", salt: "", role: user.app_metadata?.role === "admin" ? "admin" : "user", createdAt: user.created_at || new Date().toISOString() };
+          localStorage.setItem(REMOTE_SESSION_KEY, JSON.stringify({ accessToken: data.access_token, refreshToken: data.refresh_token, account }));
+          setAccounts((current) => [...current.filter((item) => item.id !== account.id), account]); setSessionId(account.id); setPassword(""); setMessage("Đăng nhập tài khoản dùng chung thành công."); return;
+        }
+        if (password.length < 8) { setMessage("Mật khẩu cần ít nhất 8 ký tự."); return; }
+        if (password !== confirm) { setMessage("Mật khẩu xác nhận chưa khớp."); return; }
+        const data = await remoteAuth("/signup", { email: normalizedEmail, password, data: { full_name: name.trim() } });
+        setPassword(""); setConfirm(""); setMode("login");
+        setMessage(data.access_token ? "Đăng ký thành công. Hãy đăng nhập." : "Đã đăng ký. Hãy kiểm tra email xác nhận rồi đăng nhập."); return;
+      } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Không kết nối được máy chủ tài khoản."); return; }
+    }
     if (mode === "login") {
       const account = accounts.find((item) => item.email === normalizedEmail);
       if (!account || await hashPassword(password, account.salt) !== account.passwordHash) { setMessage("Email hoặc mật khẩu chưa đúng."); return; }
@@ -57,7 +96,7 @@ export default function AccountPortal() {
     const next = [...accounts, account]; saveAccounts(next); localStorage.setItem(SESSION_KEY, account.id); setSessionId(account.id); setPassword(""); setConfirm(""); setMessage(role === "admin" ? "Đã tạo tài khoản quản trị cục bộ." : "Đăng ký thành công.");
   }
 
-  function logout() { localStorage.removeItem(SESSION_KEY); setSessionId(""); setMode("login"); setMessage(""); }
+  function logout() { localStorage.removeItem(SESSION_KEY); localStorage.removeItem(REMOTE_SESSION_KEY); setSessionId(""); setMode("login"); setMessage(""); }
 
   function saveReport(event: FormEvent) {
     event.preventDefault();
@@ -68,24 +107,54 @@ export default function AccountPortal() {
 
   function updateReport(id: string, status: BugReport["status"]) { const next = reports.map((item) => item.id === id ? { ...item, status } : item); setReports(next); localStorage.setItem(BUG_KEY, JSON.stringify(next)); }
 
+  function createLicense(event: FormEvent) {
+    event.preventDefault();
+    if (!licenseDraft.customer.trim() || !/^\S+@\S+\.\S+$/.test(licenseDraft.email.trim())) { setMessage("Hãy nhập tên khách hàng và email hợp lệ."); return; }
+    const expires = new Date();
+    expires.setMonth(expires.getMonth() + Math.max(1, Math.min(36, licenseDraft.months)));
+    const item: License = { id: crypto.randomUUID(), code: generateLicenseCode(), customer: licenseDraft.customer.trim(), email: licenseDraft.email.trim().toLocaleLowerCase(), plan: licenseDraft.plan, expiresAt: expires.toISOString(), status: "Hoạt động", createdAt: new Date().toISOString() };
+    const next = [item, ...licenses];
+    setLicenses(next); localStorage.setItem(LICENSE_KEY, JSON.stringify(next));
+    setLicenseDraft({ customer: "", email: "", plan: "Cá nhân", months: 12 }); setMessage("Đã tạo mã bản quyền kiểm thử.");
+  }
+
+  function toggleLicense(id: string) {
+    const next = licenses.map((item) => item.id === id ? { ...item, status: item.status === "Hoạt động" ? "Đã khóa" as const : "Hoạt động" as const } : item);
+    setLicenses(next); localStorage.setItem(LICENSE_KEY, JSON.stringify(next));
+  }
+
+  function activateLicense(event: FormEvent) {
+    event.preventDefault();
+    if (!current) return;
+    const normalizedCode = activationCode.trim().toUpperCase();
+    const license = licenses.find((item) => item.code === normalizedCode);
+    if (!license) { setMessage("Không tìm thấy mã bản quyền trên thiết bị này."); return; }
+    if (license.email !== current.email) { setMessage("Mã bản quyền được cấp cho email khác."); return; }
+    if (license.status !== "Hoạt động") { setMessage("Mã bản quyền đã bị khóa."); return; }
+    if (new Date(license.expiresAt) < new Date()) { setMessage("Mã bản quyền đã hết hạn."); return; }
+    const next = { ...activations, [current.id]: license.code };
+    setActivations(next); localStorage.setItem(ACTIVATION_KEY, JSON.stringify(next)); setActivationCode(""); setMessage("Kích hoạt bản quyền kiểm thử thành công.");
+  }
+
   if (current) return (
     <section className="account-portal" id="tai-khoan" aria-labelledby="account-title">
       <div className="account-header"><div><p className="section-kicker">Khu vực kiểm thử</p><h2 id="account-title">Xin chào, {current.name}</h2><p>{current.role === "admin" ? "Tài khoản quản trị cục bộ · Toàn quyền kiểm thử trên thiết bị này" : "Tài khoản người dùng thử nghiệm"}</p></div><button type="button" onClick={logout}>Đăng xuất</button></div>
       {current.role === "admin" ? <div className="admin-grid">
-        <aside className="admin-menu"><span>QUẢN TRỊ KIỂM THỬ</span><a href="#minh-hoa">Xử lý Word/PDF/Excel</a><a href="#cong-cu-pdf">Bộ công cụ PDF</a><a href="#chuc-nang-phan-mem">Kiểm tra chức năng</a><a href="#tai-phan-mem">Kiểm tra bản phát hành</a><button type="button" onClick={() => downloadJson(reports, `SYLAND_BAO_CAO_LOI_${new Date().toISOString().slice(0,10)}.json`)} disabled={!reports.length}>Xuất báo cáo lỗi JSON</button><small>Dữ liệu tài khoản và lỗi chỉ tồn tại trên trình duyệt này.</small></aside>
+        <aside className="admin-menu"><span>QUẢN TRỊ KIỂM THỬ</span><a href="#minh-hoa">Xử lý Word/PDF/Excel</a><a href="#cong-cu-pdf">Bộ công cụ PDF</a><a href="#chuc-nang-phan-mem">Kiểm tra chức năng</a><a href="#tai-phan-mem">Kiểm tra bản phát hành</a><button type="button" onClick={() => downloadJson(reports, `SYLAND_BAO_CAO_LOI_${new Date().toISOString().slice(0,10)}.json`)} disabled={!reports.length}>Xuất báo cáo lỗi JSON</button><button type="button" onClick={() => downloadJson(licenses, `SYLAND_BAN_QUYEN_${new Date().toISOString().slice(0,10)}.json`)} disabled={!licenses.length}>Xuất bản quyền JSON</button><small>Dữ liệu tài khoản, bản quyền và lỗi chỉ tồn tại trên trình duyệt này.</small></aside>
         <div className="bug-workspace">
-          <div className="admin-stats"><div><strong>{accounts.length}</strong><span>Tài khoản cục bộ</span></div><div><strong>{reports.length}</strong><span>Lỗi đã ghi nhận</span></div><div><strong>{reports.filter((item) => item.status === "Mới").length}</strong><span>Lỗi mới</span></div></div>
+          <div className="admin-stats"><div><strong>{accounts.length}</strong><span>Tài khoản cục bộ</span></div><div><strong>{licenses.filter((item) => item.status === "Hoạt động" && new Date(item.expiresAt) >= new Date()).length}</strong><span>Bản quyền hoạt động</span></div><div><strong>{reports.length}</strong><span>Lỗi đã ghi nhận</span></div><div><strong>{reports.filter((item) => item.status === "Mới").length}</strong><span>Lỗi mới</span></div></div>
+          <section className="license-workspace"><div className="license-heading"><div><h3>Quản lý bản quyền kiểm thử</h3><p>Tạo và thử quy trình cấp mã trước khi kết nối máy chủ thương mại.</p></div><span>CỤC BỘ</span></div><form className="license-form" onSubmit={createLicense}><label>Khách hàng<input value={licenseDraft.customer} onChange={(event) => setLicenseDraft((value) => ({ ...value, customer: event.target.value }))} placeholder="Họ tên hoặc đơn vị" /></label><label>Email<input type="email" value={licenseDraft.email} onChange={(event) => setLicenseDraft((value) => ({ ...value, email: event.target.value }))} placeholder="khachhang@example.com" /></label><label>Gói<select value={licenseDraft.plan} onChange={(event) => setLicenseDraft((value) => ({ ...value, plan: event.target.value as License["plan"] }))}><option>Cá nhân</option><option>Văn phòng</option><option>Đơn vị</option></select></label><label>Số tháng<input type="number" min={1} max={36} value={licenseDraft.months} onChange={(event) => setLicenseDraft((value) => ({ ...value, months: Number(event.target.value) || 1 }))} /></label><button type="submit">Tạo mã bản quyền</button></form><div className="license-list">{!licenses.length ? <p>Chưa có mã bản quyền kiểm thử.</p> : licenses.slice(0, 20).map((item) => <article key={item.id}><div><strong>{item.customer}</strong><code>{item.code}</code><small>{item.email} · Gói {item.plan} · Hết hạn {new Date(item.expiresAt).toLocaleDateString("vi-VN")}</small></div><button type="button" className={item.status === "Hoạt động" ? "active" : "locked"} onClick={() => toggleLicense(item.id)}>{item.status}</button></article>)}</div><p className="license-warning">Mã tạo ở đây chỉ dùng kiểm thử giao diện, chưa đủ an toàn để bán. Bản thương mại phải xác minh mã trên máy chủ.</p></section>
           <form className="bug-form" onSubmit={saveReport}><h3>Ghi nhận lỗi kiểm thử</h3><label>Tên lỗi<input value={report.title} onChange={(event) => setReport((value) => ({ ...value, title: event.target.value }))} placeholder="Mô tả ngắn gọn" /></label><div><label>Khu vực<select value={report.area} onChange={(event) => setReport((value) => ({ ...value, area: event.target.value }))}><option>Xử lý PDF</option><option>Word/PDF/Excel</option><option>Địa bàn và mã xã</option><option>Đổi tên hàng loạt</option><option>Đối chiếu Excel</option><option>Đăng nhập</option><option>Giao diện</option><option>Khác</option></select></label><label>Mức độ<select value={report.severity} onChange={(event) => setReport((value) => ({ ...value, severity: event.target.value }))}><option>Thấp</option><option>Trung bình</option><option>Cao</option><option>Nghiêm trọng</option></select></label></div><label>Các bước tái hiện<textarea value={report.steps} onChange={(event) => setReport((value) => ({ ...value, steps: event.target.value }))} placeholder="1. Mở… 2. Chọn… 3. Nhấn…" /></label><label>Kết quả mong muốn<textarea value={report.expected} onChange={(event) => setReport((value) => ({ ...value, expected: event.target.value }))} /></label><label>Kết quả thực tế<textarea value={report.actual} onChange={(event) => setReport((value) => ({ ...value, actual: event.target.value }))} /></label><button type="submit">Lưu báo cáo lỗi</button></form>
           <div className="bug-list"><h3>Danh sách lỗi gần đây</h3>{!reports.length ? <p>Chưa có lỗi được ghi nhận.</p> : reports.slice(0, 20).map((item) => <article key={item.id}><div><span className={`severity ${item.severity.toLocaleLowerCase("vi-VN")}`}>{item.severity}</span><strong>{item.title}</strong><small>{item.area} · {new Date(item.createdAt).toLocaleString("vi-VN")}</small></div><select value={item.status} onChange={(event) => updateReport(item.id, event.target.value as BugReport["status"])}><option>Mới</option><option>Đang kiểm tra</option><option>Đã xử lý</option></select></article>)}</div>
         </div>
-      </div> : <div className="user-test-panel"><h3>Tài khoản dùng thử đã sẵn sàng</h3><p>Bạn có thể sử dụng các công cụ công khai trên website. Chức năng đồng bộ tài khoản nhiều thiết bị sẽ có ở bản thương mại.</p><a className="button button-primary" href="#minh-hoa">Mở công cụ</a></div>}
+      </div> : <div className="user-test-panel"><h3>{activeLicense ? `Bản quyền ${activeLicense.plan} đang hoạt động` : "Tài khoản dùng thử đã sẵn sàng"}</h3>{activeLicense ? <div className="activated-license"><span>ĐÃ KÍCH HOẠT</span><strong>{activeLicense.code}</strong><p>Cấp cho {activeLicense.email} · Hết hạn {new Date(activeLicense.expiresAt).toLocaleDateString("vi-VN")}</p></div> : <><p>Bạn có thể sử dụng các công cụ công khai hoặc nhập mã do admin cấp trên thiết bị này.</p><form className="activation-form" onSubmit={activateLicense}><label>Mã bản quyền<input value={activationCode} onChange={(event) => setActivationCode(event.target.value.toUpperCase())} placeholder="SYL-XXXXX-XXXXX" /></label><button type="submit">Kích hoạt mã</button></form></>}<a className="button button-primary" href="#minh-hoa">Mở công cụ</a><small>Phiên bản kiểm thử cục bộ chưa đồng bộ mã giữa các thiết bị.</small></div>}
       {message && <p className="account-message">{message}</p>}
     </section>
   );
 
   return (
     <section className="account-portal account-auth" id="tai-khoan" aria-labelledby="account-title">
-      <div className="auth-copy"><p className="section-kicker">Tài khoản kiểm thử</p><h2 id="account-title">{mode === "setup" ? "Thiết lập quản trị viên SỸ LAND" : mode === "register" ? "Đăng ký tài khoản dùng thử" : "Đăng nhập SỸ LAND"}</h2><p>{mode === "setup" ? "Thiết lập mật khẩu quản trị lần đầu cho anh Nguyễn Minh Sỹ trên thiết bị này." : "Đây là chế độ kiểm thử cục bộ. Tài khoản chưa đồng bộ sang máy khác."}</p><ul><li>✓ Mật khẩu không được ghi trong mã website</li><li>✓ Chỉ lưu mã băm trên trình duyệt</li><li>✓ Admin có khu vực ghi nhận và xuất báo cáo lỗi</li></ul></div>
+      <div className="auth-copy"><p className="section-kicker">{REMOTE_AUTH ? "Tài khoản dùng chung" : "Tài khoản kiểm thử"}</p><h2 id="account-title">{mode === "setup" ? "Thiết lập quản trị viên SỸ LAND" : mode === "register" ? "Đăng ký tài khoản dùng thử" : "Đăng nhập SỸ LAND"}</h2><p>{REMOTE_AUTH ? "Tài khoản này dùng chung cho website và phần mềm SỸ LAND." : mode === "setup" ? "Thiết lập mật khẩu quản trị lần đầu cho anh Nguyễn Minh Sỹ trên thiết bị này." : "Chưa cấu hình máy chủ xác thực; tài khoản chỉ lưu trên thiết bị."}</p><ul><li>✓ Mật khẩu không được ghi trong mã website</li><li>✓ {REMOTE_AUTH ? "Xác thực tập trung qua kết nối HTTPS" : "Chỉ lưu mã băm trên trình duyệt"}</li><li>✓ Admin có khu vực ghi nhận và xuất báo cáo lỗi</li></ul></div>
       <form className="auth-form" onSubmit={submitAccount}>{mode !== "login" && <label>Họ và tên<input value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" /></label>}<label>Email<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" placeholder="Nhập email quản trị" /></label><label>Mật khẩu<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} placeholder="Tối thiểu 8 ký tự" /></label>{mode !== "login" && <label>Xác nhận mật khẩu<input type="password" value={confirm} onChange={(event) => setConfirm(event.target.value)} autoComplete="new-password" /></label>}<button type="submit">{mode === "setup" ? "Tạo tài khoản admin" : mode === "register" ? "Đăng ký" : "Đăng nhập"}</button>{message && <p className="account-message">{message}</p>}{mode !== "setup" && <p className="auth-switch">{mode === "login" ? <>Chưa có tài khoản? <button type="button" onClick={() => { setMode("register"); setMessage(""); }}>Đăng ký dùng thử</button></> : <>Đã có tài khoản? <button type="button" onClick={() => { setMode("login"); setMessage(""); }}>Đăng nhập</button></>}</p>}</form>
     </section>
   );
