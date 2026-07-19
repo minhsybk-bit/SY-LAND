@@ -6,6 +6,7 @@ type Mode = "split" | "merge" | "rotate" | "organize" | "resize" | "annotate" | 
 type PagePreview = { page: number; image: string };
 type PageComparison = { page: number; similarity: number | null; status: "same" | "review" | "changed" | "missing" | "scan"; note: string };
 type CompareResult = { pagesA: number; pagesB: number; changedPages: number[]; samePages: number; reviewPages: number; scanPages: number; textCoverage: number; details: PageComparison[] };
+type ToolCategory = "all" | "split" | "edit" | "convert" | "review" | "optimize";
 
 function downloadBlob(bytes: Uint8Array, name: string, type = "application/pdf") {
   const blob = new Blob([bytes as BlobPart], { type });
@@ -56,9 +57,10 @@ export default function PdfToolkit() {
   const [mode, setMode] = useState<Mode>("split");
   const [files, setFiles] = useState<File[]>([]);
   const [ranges, setRanges] = useState("1");
-  const [splitKind, setSplitKind] = useState<"ranges" | "each" | "selected" | "visual" | "fixed">("ranges");
+  const [splitKind, setSplitKind] = useState<"ranges" | "each" | "selected" | "visual" | "fixed" | "cuts" | "parity">("ranges");
   const [pagesPerPart, setPagesPerPart] = useState(2);
   const [outputPrefix, setOutputPrefix] = useState("SYLAND");
+  const [cutPoints, setCutPoints] = useState("3, 7");
   const [angle, setAngle] = useState(90);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
@@ -77,8 +79,16 @@ export default function PdfToolkit() {
   const [imageFormat, setImageFormat] = useState<"jpg" | "png">("jpg");
   const [imageResolution, setImageResolution] = useState<"screen" | "standard" | "high">("standard");
   const [imageRanges, setImageRanges] = useState("1");
+  const [toolSearch, setToolSearch] = useState("");
+  const [toolCategory, setToolCategory] = useState<ToolCategory>("all");
   const inputRef = useRef<HTMLInputElement>(null);
   const totalSize = useMemo(() => files.reduce((sum, file) => sum + file.size, 0), [files]);
+
+  function toolVisible(category: Exclude<ToolCategory, "all">, keywords: string) {
+    const query = toolSearch.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+    const normalized = keywords.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    return (toolCategory === "all" || toolCategory === category) && (!query || normalized.includes(query));
+  }
 
   async function renderPreviews(file: File) {
     setNotice("Đang tạo ảnh xem trước…");
@@ -331,7 +341,11 @@ export default function PdfToolkit() {
       } else {
         const source = await PDFDocument.load(await files[0].arrayBuffer(), { ignoreEncryption: false });
         const total = source.getPageCount();
-        const groups = splitKind === "each" ? Array.from({ length: total }, (_, index) => [index]) : splitKind === "fixed" ? Array.from({ length: Math.ceil(total / pagesPerPart) }, (_, part) => Array.from({ length: Math.min(pagesPerPart, total - part * pagesPerPart) }, (__, index) => part * pagesPerPart + index)) : splitKind === "visual" ? [[...selectedPages].sort((a, b) => a - b).map((page) => page - 1)].filter((group) => group.length) : parseRanges(ranges, total);
+        const cuts = splitKind === "cuts" ? [...new Set(cutPoints.split(",").map((value) => Number(value.trim())).filter((value) => Number.isInteger(value) && value > 0 && value < total))].sort((a, b) => a - b) : [];
+        if (splitKind === "cuts" && !cuts.length) throw new Error(`Hãy nhập ít nhất một mốc từ 1 đến ${Math.max(1, total - 1)}.`);
+        const cutGroups = splitKind === "cuts" ? [...cuts, total].map((end, index) => { const start = index ? cuts[index - 1] : 0; return Array.from({ length: end - start }, (_, page) => start + page); }) : [];
+        const parityGroups = [Array.from({ length: total }, (_, index) => index).filter((index) => (index + 1) % 2 === 1), Array.from({ length: total }, (_, index) => index).filter((index) => (index + 1) % 2 === 0)].filter((group) => group.length);
+        const groups = splitKind === "each" ? Array.from({ length: total }, (_, index) => [index]) : splitKind === "parity" ? parityGroups : splitKind === "fixed" ? Array.from({ length: Math.ceil(total / pagesPerPart) }, (_, part) => Array.from({ length: Math.min(pagesPerPart, total - part * pagesPerPart) }, (__, index) => part * pagesPerPart + index)) : splitKind === "cuts" ? cutGroups : splitKind === "visual" ? [[...selectedPages].sort((a, b) => a - b).map((page) => page - 1)].filter((group) => group.length) : parseRanges(ranges, total);
         if (splitKind === "visual" && !groups.length) throw new Error("Hãy chọn ít nhất một trang từ ảnh xem trước.");
         if (splitKind === "selected" || splitKind === "visual") {
           const output = await PDFDocument.create();
@@ -345,7 +359,7 @@ export default function PdfToolkit() {
           for (let index = 0; index < groups.length; index++) {
             const output = await PDFDocument.create();
             (await output.copyPages(source, groups[index])).forEach((page) => output.addPage(page));
-            const label = splitKind === "each" ? `TRANG_${String(index + 1).padStart(3, "0")}` : `PHAN_${String(index + 1).padStart(2, "0")}_TRANG_${groups[index][0] + 1}-${groups[index].at(-1)! + 1}`;
+            const label = splitKind === "each" ? `TRANG_${String(index + 1).padStart(3, "0")}` : splitKind === "parity" ? (index === 0 ? "TRANG_LE" : "TRANG_CHAN") : `PHAN_${String(index + 1).padStart(2, "0")}_TRANG_${groups[index][0] + 1}-${groups[index].at(-1)! + 1}`;
             const prefix = baseName(outputPrefix.trim() || baseName(files[0].name));
             archive[`${prefix}_${label}.pdf`] = await output.save();
           }
@@ -363,20 +377,22 @@ export default function PdfToolkit() {
     <section className="pdf-toolkit" id="cong-cu-pdf" aria-labelledby="pdf-toolkit-title">
       <div className="section-heading split-heading"><div><p className="section-kicker">Bộ công cụ PDF địa chính</p><h2 id="pdf-toolkit-title">Tách, chọn trang, nối và xoay PDF<br />ngay trên thiết bị.</h2></div><p>Thiết kế độc lập cho SỸ LAND. Tệp không được tải lên máy chủ; bản gốc không bị sửa hoặc ghi đè.</p></div>
       <div className="pdf-tool-shell">
+        <div className="pdf-tool-finder"><label><span aria-hidden="true">⌕</span><input value={toolSearch} onChange={(event) => setToolSearch(event.target.value)} placeholder="Tìm công cụ: tách, OCR, nén, ảnh…" /></label><div>{([{ key: "all", label: "Tất cả" }, { key: "split", label: "Tách" }, { key: "edit", label: "Chỉnh sửa" }, { key: "convert", label: "Chuyển đổi" }, { key: "review", label: "Kiểm tra" }, { key: "optimize", label: "Tối ưu" }] as const).map((item) => <button className={toolCategory === item.key ? "active" : ""} type="button" key={item.key} onClick={() => setToolCategory(item.key)}>{item.label}</button>)}</div></div>
         <div className="pdf-tool-tabs" role="tablist" aria-label="Chọn công cụ PDF">
-          <button className={mode === "split" ? "active" : ""} type="button" onClick={() => changeMode("split")}>Tách và xuất trang</button>
-          <button className={mode === "merge" ? "active" : ""} type="button" onClick={() => changeMode("merge")}>Nối PDF</button>
-          <button className={mode === "rotate" ? "active" : ""} type="button" onClick={() => changeMode("rotate")}>Xoay PDF</button>
-          <button className={mode === "organize" ? "active" : ""} type="button" onClick={() => changeMode("organize")}>Sắp xếp · Xóa trang</button>
-          <button className={mode === "resize" ? "active" : ""} type="button" onClick={() => changeMode("resize")}>Chuyển sang A4</button>
-          <button className={mode === "annotate" ? "active" : ""} type="button" onClick={() => changeMode("annotate")}>Số trang · Dấu bản quyền</button>
-          <button className={mode === "optimize" ? "active" : ""} type="button" onClick={() => changeMode("optimize")}>Tối ưu PDF</button>
-          <button className={mode === "compare" ? "active" : ""} type="button" onClick={() => changeMode("compare")}>So sánh PDF</button>
-          <button className={mode === "sanitize" ? "active" : ""} type="button" onClick={() => changeMode("sanitize")}>Làm sạch metadata</button>
-          <button className={mode === "ocr" ? "active" : ""} type="button" onClick={() => changeMode("ocr")}>OCR PDF scan</button>
-          <button className={mode === "compress" ? "active" : ""} type="button" onClick={() => changeMode("compress")}>Nén ảnh PDF</button>
-          <button className={mode === "dedupe" ? "active" : ""} type="button" onClick={() => changeMode("dedupe")}>Tìm trang trùng</button>
-          <button className={mode === "toimage" ? "active" : ""} type="button" onClick={() => changeMode("toimage")}>PDF sang ảnh</button>
+          {toolVisible("split", "tách xuất trang chia đều chẵn lẻ khoảng mốc") && <button className={mode === "split" ? "active" : ""} type="button" onClick={() => changeMode("split")}>Tách và xuất trang</button>}
+          {toolVisible("edit", "nối ghép gộp pdf") && <button className={mode === "merge" ? "active" : ""} type="button" onClick={() => changeMode("merge")}>Nối PDF</button>}
+          {toolVisible("edit", "xoay trang pdf") && <button className={mode === "rotate" ? "active" : ""} type="button" onClick={() => changeMode("rotate")}>Xoay PDF</button>}
+          {toolVisible("edit", "sắp xếp xóa trang") && <button className={mode === "organize" ? "active" : ""} type="button" onClick={() => changeMode("organize")}>Sắp xếp · Xóa trang</button>}
+          {toolVisible("convert", "chuyển khổ a3 a4 in ký số") && <button className={mode === "resize" ? "active" : ""} type="button" onClick={() => changeMode("resize")}>Chuyển sang A4</button>}
+          {toolVisible("edit", "số trang dấu bản quyền watermark") && <button className={mode === "annotate" ? "active" : ""} type="button" onClick={() => changeMode("annotate")}>Số trang · Dấu bản quyền</button>}
+          {toolVisible("optimize", "tối ưu cấu trúc dung lượng") && <button className={mode === "optimize" ? "active" : ""} type="button" onClick={() => changeMode("optimize")}>Tối ưu PDF</button>}
+          {toolVisible("review", "so sánh đối chiếu sai khác") && <button className={mode === "compare" ? "active" : ""} type="button" onClick={() => changeMode("compare")}>So sánh PDF</button>}
+          {toolVisible("optimize", "làm sạch metadata riêng tư") && <button className={mode === "sanitize" ? "active" : ""} type="button" onClick={() => changeMode("sanitize")}>Làm sạch metadata</button>}
+          {toolVisible("review", "ocr nhận dạng chữ scan tiếng việt") && <button className={mode === "ocr" ? "active" : ""} type="button" onClick={() => changeMode("ocr")}>OCR PDF scan</button>}
+          {toolVisible("optimize", "nén ảnh giảm dung lượng pdf") && <button className={mode === "compress" ? "active" : ""} type="button" onClick={() => changeMode("compress")}>Nén ảnh PDF</button>}
+          {toolVisible("review", "tìm trang trùng lặp kiểm tra") && <button className={mode === "dedupe" ? "active" : ""} type="button" onClick={() => changeMode("dedupe")}>Tìm trang trùng</button>}
+          {toolVisible("convert", "pdf sang ảnh jpg png chuyển đổi") && <button className={mode === "toimage" ? "active" : ""} type="button" onClick={() => changeMode("toimage")}>PDF sang ảnh</button>}
+          {!(["split", "edit", "convert", "review", "optimize"] as const).some((category) => toolVisible(category, category === "split" ? "tách xuất trang chia đều chẵn lẻ khoảng mốc" : category === "edit" ? "nối ghép gộp xoay sắp xếp xóa số trang dấu bản quyền watermark" : category === "convert" ? "chuyển khổ a3 a4 pdf sang ảnh jpg png" : category === "review" ? "so sánh đối chiếu ocr scan trang trùng" : "tối ưu cấu trúc metadata nén dung lượng")) && <p className="tool-not-found">Không tìm thấy công cụ phù hợp.</p>}
         </div>
         <div className="pdf-tool-body">
           <div className="pdf-pick">
@@ -385,7 +401,7 @@ export default function PdfToolkit() {
             <button type="button" onClick={() => inputRef.current?.click()}>Chọn PDF từ thiết bị</button>
           </div>
           <div className="pdf-options">
-            {mode === "split" && <><h3>Phương thức tách</h3><div className="pdf-choice-grid split-choice-grid"><label><input type="radio" checked={splitKind === "ranges"} onChange={() => setSplitKind("ranges")} /><span><b>Theo khoảng</b><small>Tạo một PDF cho mỗi khoảng</small></span></label><label><input type="radio" checked={splitKind === "selected"} onChange={() => setSplitKind("selected")} /><span><b>Nhập trang cần xuất</b><small>Gộp trang chọn vào một PDF</small></span></label><label><input type="radio" checked={splitKind === "visual"} onChange={() => setSplitKind("visual")} /><span><b>Chọn trực quan</b><small>Bấm vào ảnh từng trang</small></span></label><label><input type="radio" checked={splitKind === "fixed"} onChange={() => setSplitKind("fixed")} /><span><b>Chia đều</b><small>Tự tách mỗi N trang</small></span></label><label><input type="radio" checked={splitKind === "each"} onChange={() => setSplitKind("each")} /><span><b>Mỗi trang một tệp</b><small>Tải kết quả dạng ZIP</small></span></label></div>{splitKind !== "each" && splitKind !== "visual" && splitKind !== "fixed" && <label className="range-input">Khoảng/trang cần xử lý<input value={ranges} onChange={(event) => setRanges(event.target.value)} placeholder="Ví dụ: 1-3, 5, 8-10" /><small>Dùng dấu phẩy để ngăn cách nhiều khoảng.</small></label>}{splitKind === "fixed" && <div className="fixed-split-options"><label>Số trang mỗi phần<input type="number" min="1" max="100" value={pagesPerPart} onChange={(event) => setPagesPerPart(Math.min(100, Math.max(1, Number(event.target.value) || 1)))} /></label><p>{previews.length ? `Dự kiến tạo ${Math.ceil(previews.length / pagesPerPart)} phần từ ${previews.length} trang.` : "Chọn PDF để tính số phần dự kiến."}</p></div>}{splitKind === "visual" && <><div className="visual-select-toolbar"><b>Đã chọn {selectedPages.size} trang</b><button type="button" onClick={() => setSelectedPages(new Set(previews.map((item) => item.page)))}>Chọn tất cả</button><button type="button" onClick={() => setSelectedPages(new Set())}>Bỏ chọn</button></div><div className="visual-page-picker">{previews.map((item) => <button className={selectedPages.has(item.page) ? "selected" : ""} type="button" key={item.page} onClick={() => toggleSelected(item.page)}><span>{selectedPages.has(item.page) ? "✓" : item.page}</span><img src={item.image} alt={`Trang ${item.page}`} /><small>Trang {item.page}</small></button>)}</div>{!previews.length && <p className="pdf-empty">Chọn PDF để tạo ảnh xem trước.</p>}</>}{(splitKind === "ranges" || splitKind === "fixed" || splitKind === "each") && <label className="range-input">Tiền tố tên tệp kết quả<input value={outputPrefix} maxLength={60} onChange={(event) => setOutputPrefix(event.target.value)} placeholder="Ví dụ: HOSO_DANGKY" /><small>Tên kết quả được tự loại bỏ ký tự không hợp lệ.</small></label>}</>}
+            {mode === "split" && <><h3>Phương thức tách</h3><div className="pdf-choice-grid split-choice-grid"><label><input type="radio" checked={splitKind === "ranges"} onChange={() => setSplitKind("ranges")} /><span><b>Theo khoảng</b><small>Tạo một PDF cho mỗi khoảng</small></span></label><label><input type="radio" checked={splitKind === "selected"} onChange={() => setSplitKind("selected")} /><span><b>Nhập trang cần xuất</b><small>Gộp trang chọn vào một PDF</small></span></label><label><input type="radio" checked={splitKind === "visual"} onChange={() => setSplitKind("visual")} /><span><b>Chọn trực quan</b><small>Bấm vào ảnh từng trang</small></span></label><label><input type="radio" checked={splitKind === "cuts"} onChange={() => setSplitKind("cuts")} /><span><b>Tách tại mốc</b><small>Chia sau các trang chỉ định</small></span></label><label><input type="radio" checked={splitKind === "fixed"} onChange={() => setSplitKind("fixed")} /><span><b>Chia đều</b><small>Tự tách mỗi N trang</small></span></label><label><input type="radio" checked={splitKind === "parity"} onChange={() => setSplitKind("parity")} /><span><b>Trang chẵn · lẻ</b><small>Tạo hai PDF xen kẽ</small></span></label><label><input type="radio" checked={splitKind === "each"} onChange={() => setSplitKind("each")} /><span><b>Mỗi trang một tệp</b><small>Tải kết quả dạng ZIP</small></span></label></div>{splitKind !== "each" && splitKind !== "parity" && splitKind !== "visual" && splitKind !== "fixed" && splitKind !== "cuts" && <label className="range-input">Khoảng/trang cần xử lý<input value={ranges} onChange={(event) => setRanges(event.target.value)} placeholder="Ví dụ: 1-3, 5, 8-10" /><small>Dùng dấu phẩy để ngăn cách nhiều khoảng.</small></label>}{splitKind === "cuts" && <label className="range-input">Tách sau các trang<input value={cutPoints} onChange={(event) => setCutPoints(event.target.value)} placeholder="Ví dụ: 3, 7" /><small>Ví dụ 3, 7 sẽ tạo các phần 1–3, 4–7 và 8–hết.</small></label>}{splitKind === "fixed" && <div className="fixed-split-options"><label>Số trang mỗi phần<input type="number" min="1" max="100" value={pagesPerPart} onChange={(event) => setPagesPerPart(Math.min(100, Math.max(1, Number(event.target.value) || 1)))} /></label><p>{previews.length ? `Dự kiến tạo ${Math.ceil(previews.length / pagesPerPart)} phần từ ${previews.length} trang.` : "Chọn PDF để tính số phần dự kiến."}</p></div>}{splitKind === "parity" && <p className="parity-note">Tệp thứ nhất gồm trang 1, 3, 5…; tệp thứ hai gồm trang 2, 4, 6… Trang được đánh số theo thứ tự hiển thị của PDF.</p>}{splitKind === "visual" && <><div className="visual-select-toolbar"><b>Đã chọn {selectedPages.size} trang</b><button type="button" onClick={() => setSelectedPages(new Set(previews.map((item) => item.page)))}>Chọn tất cả</button><button type="button" onClick={() => setSelectedPages(new Set())}>Bỏ chọn</button></div><div className="visual-page-picker">{previews.map((item) => <button className={selectedPages.has(item.page) ? "selected" : ""} type="button" key={item.page} onClick={() => toggleSelected(item.page)}><span>{selectedPages.has(item.page) ? "✓" : item.page}</span><img src={item.image} alt={`Trang ${item.page}`} /><small>Trang {item.page}</small></button>)}</div>{!previews.length && <p className="pdf-empty">Chọn PDF để tạo ảnh xem trước.</p>}</>}{(splitKind === "ranges" || splitKind === "cuts" || splitKind === "fixed" || splitKind === "parity" || splitKind === "each") && <label className="range-input">Tiền tố tên tệp kết quả<input value={outputPrefix} maxLength={60} onChange={(event) => setOutputPrefix(event.target.value)} placeholder="Ví dụ: HOSO_DANGKY" /><small>Tên kết quả được tự loại bỏ ký tự không hợp lệ.</small></label>}</>}
             {mode === "merge" && <><h3>Thứ tự nối</h3><div className="merge-list">{files.length ? files.map((file, index) => <div key={`${file.name}-${file.lastModified}`}><span>{index + 1}</span><p><b>{file.name}</b><small>{(file.size / 1024 / 1024).toFixed(1)} MB</small></p><button type="button" onClick={() => move(index, -1)} disabled={index === 0}>↑</button><button type="button" onClick={() => move(index, 1)} disabled={index === files.length - 1}>↓</button><button type="button" onClick={() => setFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))}>×</button></div>) : <p className="pdf-empty">Chưa chọn tệp.</p>}</div></>}
             {mode === "rotate" && <><h3>Góc xoay toàn bộ trang</h3><div className="angle-options">{[90, 180, 270].map((value) => <button className={angle === value ? "active" : ""} type="button" key={value} onClick={() => setAngle(value)}>↻ {value}°</button>)}</div></>}
             {mode === "organize" && <><h3>Xem trước và sắp xếp trang</h3><div className="page-organizer">{previews.map((item, index) => <article className={removedPages.has(item.page) ? "removed" : ""} key={item.page}><div><img src={item.image} alt={`Xem trước trang ${item.page}`} /><span>{index + 1}</span></div><small>Trang gốc {item.page}</small><div><button type="button" onClick={() => movePage(index, -1)} disabled={index === 0}>←</button><button type="button" onClick={() => movePage(index, 1)} disabled={index === previews.length - 1}>→</button><button type="button" className="remove-page" onClick={() => toggleRemoved(item.page)}>{removedPages.has(item.page) ? "Giữ" : "Xóa"}</button></div></article>)}</div></>}
