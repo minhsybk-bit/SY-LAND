@@ -137,34 +137,49 @@ function findVillageCode(text: string, profile?: LocationProfile) {
 }
 
 function cleanNumber(value?: string) {
-  return (value || "").replace(/\s+/g, "").trim();
+  return (value || "").replace(/\D/g, "").replace(/^0+(?=\d)/, "").trim();
+}
+
+function normalizeCommuneCode(value?: string) {
+  const digits = (value || "").replace(/\D/g, "");
+  return digits && digits.length <= 5 ? digits.padStart(5, "0") : "";
 }
 
 function extractLandFields(text: string, fileName: string, profile?: LocationProfile): LandFields {
-  const fileMatch = fileName.match(/(?:CHUACOGIAY|COGCN)_([0-9]{4,5})_([0-9]{1,6})_([0-9]{1,7})/i);
+  const fileMatch = fileName.match(/(?:CHUACOGIAY|CHUACAPGIAY|COGCN)[_-]([0-9]{4,5})[_-]([0-9]{1,6})[_-]([0-9]{1,7})(?=[_.-]|$)/i);
   const explicitCode = text.match(/m[aã]\s*x[aã]\s*[:\-]?\s*([0-9]{4,5})/iu)?.[1];
   const parcelAddress = text.match(/(?:địa\s*chỉ\s*thửa\s*đất|thửa\s*đất\s*tại)([\s\S]{0,280})/iu)?.[1] || "";
-  const communeCode = (fileMatch?.[1] || explicitCode || findVillageCode(parcelAddress, profile) || findVillageCode(text, profile) || profile?.communeCode || "").padStart(5, "0");
+  const communeCode = normalizeCommuneCode(fileMatch?.[1] || explicitCode || findVillageCode(parcelAddress, profile) || findVillageCode(text, profile) || profile?.communeCode);
   const mapSheetFromText = text.match(/tờ\s*bản\s*đồ(?:\s*địa\s*chính)?\s*(?:số)?\s*[:\-]?\s*([0-9]{1,6})/iu)?.[1];
   const parcelFromText = text.match(/(?:thửa\s*đất|thửa)\s*(?:số)?\s*[:\-]?\s*([0-9]{1,7})/iu)?.[1];
   const area = text.match(/diện\s*tích(?:\s*thửa\s*đất)?\s*[:\-]?\s*([0-9][0-9.,\s]*)\s*m(?:2|²)/iu)?.[1];
-  const forestry = /\b(?:RSX|RPH|RDD)\b/i.test(text);
+  const forestry = /\b(?:RSX|RPH|RDD)\b/i.test(`${text} ${fileName}`);
   let mapSheet = cleanNumber(fileMatch?.[2] || mapSheetFromText);
-  if (forestry && mapSheet === "1") mapSheet = "110000";
-  if (forestry && mapSheet === "2") mapSheet = "210000";
+  if (forestry && /^[123]$/.test(mapSheet)) mapSheet = `${mapSheet}10000`;
 
   return {
     communeCode,
     mapSheet,
     parcel: cleanNumber(fileMatch?.[3] || parcelFromText),
     area: cleanNumber(area),
-    prefix: fileName.toUpperCase().startsWith("COGCN_") ? "COGCN" : "CHUACOGIAY",
-    suffix: fileName.toUpperCase().includes("_TBXN") ? "TBXN" : fileName.toUpperCase().includes("_DDK") ? "DDK" : "GT",
+    prefix: /^COGCN[_-]/i.test(fileName) ? "COGCN" : "CHUACOGIAY",
+    suffix: /[_-]TBXN(?:[_.-]|$)/i.test(fileName) ? "TBXN" : /[_-]DDK(?:[_.-]|$)/i.test(fileName) ? "DDK" : "GT",
   };
 }
 
+function reviewLandFields(fields: LandFields, text: string, fileName: string) {
+  const notes: string[] = [];
+  if (!/^\d{5}$/.test(fields.communeCode)) notes.push("mã xã phải có đúng 5 chữ số");
+  if (!fields.mapSheet) notes.push("thiếu số tờ bản đồ");
+  if (!fields.parcel) notes.push("thiếu số thửa");
+  if (/CHUACAPGIAY/i.test(fileName)) notes.push("đã chuẩn hóa tiền tố cũ CHUACAPGIAY thành CHUACOGIAY");
+  if (/\b(?:RSX|RPH|RDD)\b/i.test(`${text} ${fileName}`) && /^[123]10000$/.test(fields.mapSheet)) notes.push(`đã áp dụng quy tắc tờ đất rừng ${fields.mapSheet.slice(0, 1)} → ${fields.mapSheet}`);
+  if (fields.mapSheet && fields.parcel && fields.mapSheet === fields.parcel) notes.push("số tờ trùng số thửa, nên kiểm tra lại");
+  return notes;
+}
+
 function buildSuggestedName(file: File, fields: LandFields) {
-  if (!fields.communeCode || !fields.mapSheet || !fields.parcel) return "";
+  if (!/^\d{5}$/.test(fields.communeCode) || !/^\d{1,6}$/.test(fields.mapSheet) || !/^\d{1,7}$/.test(fields.parcel)) return "";
   const extension = file.name.split(".").pop()?.toLowerCase() || "pdf";
   return `${fields.prefix}_${fields.communeCode}_${fields.mapSheet}_${fields.parcel}_${fields.suffix}.${extension}`;
 }
@@ -322,6 +337,9 @@ async function processExcel(file: File): Promise<ProcessedResult> {
     (total, row) => total + row.filter((cell) => String(cell).trim() !== "").length,
     0,
   );
+  const blankRows = rows.filter((row) => row.every((cell) => !String(cell ?? "").trim())).length;
+  const rowKeys = rows.slice(1).map((row) => row.map((cell) => String(cell ?? "").trim()).join("\u001f")).filter((key) => key.replaceAll("\u001f", ""));
+  const duplicateRows = rowKeys.length - new Set(rowKeys).size;
 
   return {
     kind: "excel",
@@ -332,10 +350,12 @@ async function processExcel(file: File): Promise<ProcessedResult> {
       { label: "Số dòng", value: rows.length.toLocaleString("vi-VN") },
       { label: "Số cột", value: columns.toLocaleString("vi-VN") },
       { label: "Ô có dữ liệu", value: filled.toLocaleString("vi-VN") },
+      { label: "Dòng trống", value: blankRows.toLocaleString("vi-VN") },
+      { label: "Dòng trùng", value: duplicateRows.toLocaleString("vi-VN") },
     ],
     rows,
     sheetName,
-    warning: rows.length > 200 ? "Bảng xem trước chỉ hiển thị 200 dòng đầu; tệp xuất vẫn giữ toàn bộ dữ liệu đã đọc." : undefined,
+    warning: [rows.length > 200 ? "Bảng xem trước chỉ hiển thị 200 dòng đầu." : "", blankRows ? `Phát hiện ${blankRows} dòng trống.` : "", duplicateRows ? `Phát hiện ${duplicateRows} dòng trùng nội dung.` : ""].filter(Boolean).join(" ") || undefined,
   };
 }
 
@@ -353,6 +373,7 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
   const [batchSuffix, setBatchSuffix] = useState<LandFields["suffix"]>("GT");
   const [archiveMode, setArchiveMode] = useState<"flat" | "folders">("folders");
   const [archiveRoot, setArchiveRoot] = useState("HO_SO_DAT_DAI");
+  const [batchOcr, setBatchOcr] = useState(false);
 
   const suggestedNames = useMemo(
     () => items.map((item) => buildSuggestedName(item.file, item.fields)),
@@ -516,6 +537,7 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
   async function processAll() {
     if (!items.length || running) return;
     setRunning(true);
+    let ocrPdfCount = 0;
     for (const item of items) {
       if (item.status === "error") continue;
       updateItem(item.id, { status: "processing", message: "Đang đọc nội dung…" });
@@ -526,9 +548,12 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
         if (extension === "docx") {
           text = (await processWord(item.file)).text || "";
         } else if (extension === "pdf") {
-          const output = await processPdf(item.file, () => undefined, false);
+          const runOcr = batchOcr && ocrPdfCount < 5;
+          if (runOcr) ocrPdfCount += 1;
+          const output = await processPdf(item.file, () => undefined, runOcr);
           text = output.text || "";
           scanNote = output.warning || "";
+          if (batchOcr && !runOcr) scanNote = [scanNote, "Đã đạt giới hạn OCR 5 PDF trong một lượt; hãy xử lý riêng tệp scan này."].filter(Boolean).join(" ");
         } else {
           await processExcel(item.file);
         }
@@ -536,12 +561,15 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
         extracted.prefix = item.fields.prefix;
         extracted.suffix = item.fields.suffix;
         const complete = Boolean(extracted.communeCode && extracted.mapSheet && extracted.parcel);
+        const reviewNotes = reviewLandFields(extracted, text, item.file.name);
+        const needsReview = !complete || reviewNotes.some((note) => note.includes("nên kiểm tra"));
+        const detailMessage = [scanNote, ...reviewNotes].filter(Boolean).join(" · ");
         updateItem(item.id, {
           fields: extracted,
-          status: complete ? "done" : "review",
-          message: complete ? (scanNote || "Đã nhận diện đủ trường") : (scanNote || "Cần bổ sung trường còn thiếu"),
+          status: needsReview ? "review" : "done",
+          message: detailMessage || "Đã nhận diện đủ trường",
         });
-        onProcessed({ id: `${Date.now()}-${item.id}`, fileName: item.file.name, fileType: extension?.toUpperCase() || "TỆP", processedAt: new Date().toISOString(), result: complete ? "Hoàn thành" : "Cần rà soát", suggestedName: buildSuggestedName(item.file, extracted) });
+        onProcessed({ id: `${Date.now()}-${item.id}`, fileName: item.file.name, fileType: extension?.toUpperCase() || "TỆP", processedAt: new Date().toISOString(), result: needsReview ? "Cần rà soát" : "Hoàn thành", suggestedName: buildSuggestedName(item.file, extracted) });
       } catch (reason) {
         console.error(reason);
         updateItem(item.id, { status: "error", message: "Không đọc được tệp" });
@@ -561,6 +589,8 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
       const path = archiveMode === "folders" ? `${safeRoot}/${item.fields.prefix}/${item.fields.suffix}/${fileName}` : fileName;
       archive[path] = new Uint8Array(await item.file.arrayBuffer());
     }
+    const manifestRows: CellValue[][] = [["STT", "Tệp nguồn", "Tên chuẩn", "Mã xã", "Số tờ", "Số thửa", "Trạng thái", "Ghi chú"], ...validItems.map((item, index) => [index + 1, item.file.name, buildSuggestedName(item.file, item.fields), item.fields.communeCode, item.fields.mapSheet, item.fields.parcel, item.status, item.message])];
+    archive[`${safeBaseName(archiveRoot.trim() || "HO_SO_DAT_DAI")}_NHAT_KY.csv`] = new TextEncoder().encode(`\uFEFF${manifestRows.map((row) => row.map(escapeCsv).join(",")).join("\r\n")}`);
     const zipped = zipSync(archive, { level: 6 });
     const blob = new Blob([zipped], { type: "application/zip" });
     const url = URL.createObjectURL(blob);
@@ -622,7 +652,7 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
   return (
     <section className="batch-shell" aria-labelledby="batch-title">
       <div className="batch-heading">
-        <div><span className="demo-label">04 · XỬ LÝ HÀNG LOẠT</span><h3 id="batch-title">Chuẩn hóa nhiều hồ sơ trong một lượt</h3><p>Tối đa 50 tệp, 20 MB mỗi tệp. PDF scan được đánh dấu để OCR riêng nhằm tránh quá tải.</p></div>
+        <div><span className="demo-label">04 · XỬ LÝ HÀNG LOẠT</span><h3 id="batch-title">Chuẩn hóa nhiều hồ sơ trong một lượt</h3><p>Tối đa 50 tệp, 20 MB mỗi tệp. Có thể bật OCR cho tối đa 5 PDF scan trong mỗi lượt.</p></div>
         <div className="batch-summary"><strong>{items.length}</strong><span>Tệp đã chọn</span><strong>{readyCount}</strong><span>Sẵn sàng tải</span></div>
       </div>
       <div className="batch-toolbar">
@@ -630,6 +660,7 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
         <label>Hậu tố<select value={batchSuffix} onChange={(event) => setBatchSuffix(event.target.value as LandFields["suffix"])}><option value="GT">GT</option><option value="TBXN">TBXN</option><option value="DDK">DDK</option></select></label>
         <label>Cách đóng gói<select value={archiveMode} onChange={(event) => setArchiveMode(event.target.value as "flat" | "folders")}><option value="folders">Chia thư mục tự động</option><option value="flat">Một thư mục</option></select></label>
         {archiveMode === "folders" && <label className="archive-root-label">Tên thư mục gốc<input value={archiveRoot} maxLength={50} onChange={(event) => setArchiveRoot(event.target.value)} placeholder="HO_SO_DAT_DAI" /></label>}
+        <label className="batch-ocr-toggle"><input type="checkbox" checked={batchOcr} onChange={(event) => setBatchOcr(event.target.checked)} /><span><b>OCR PDF scan</b><small>Tối đa 5 PDF/lượt; xử lý lâu hơn</small></span></label>
         <button type="button" className="secondary-action" onClick={applyDefaults} disabled={!items.length}>Áp dụng cho tất cả</button>
         <input ref={inputRef} type="file" accept={ACCEPTED} multiple onChange={(event) => addFiles(event.target.files)} aria-label="Chọn nhiều tệp hồ sơ" />
         <button type="button" className="batch-add" onClick={() => inputRef.current?.click()}>+ Chọn nhiều tệp</button>
@@ -739,10 +770,9 @@ export default function FileProcessor() {
   }
 
   const suggestedFileName = useMemo(() => {
-    if (!file || !landFields.communeCode || !landFields.mapSheet || !landFields.parcel) return "";
-    const extension = file.name.split(".").pop()?.toLowerCase() || "pdf";
-    return `${landFields.prefix}_${landFields.communeCode}_${landFields.mapSheet}_${landFields.parcel}_${landFields.suffix}.${extension}`;
+    return file ? buildSuggestedName(file, landFields) : "";
   }, [file, landFields]);
+  const landReviewNotes = useMemo(() => file && result?.kind !== "excel" ? reviewLandFields(landFields, result?.text || "", file.name) : [], [file, result, landFields]);
 
   async function handleFile(nextFile?: File) {
     if (!nextFile) return;
@@ -818,6 +848,58 @@ export default function FileProcessor() {
     anchor.download = `${safeBaseName(file.name)}_KET_QUA.${extension}`;
     anchor.click();
     URL.revokeObjectURL(url);
+  }
+
+  async function exportCleanedWorkbook() {
+    if (!result?.rows || !file) return;
+    const XLSX = await import("xlsx");
+    const seen = new Set<string>();
+    const cleaned = result.rows
+      .map((row) => row.map((cell) => typeof cell === "string" ? cell.trim().replace(/\s+/g, " ") : cell))
+      .filter((row, index) => {
+        if (row.every((cell) => !String(cell ?? "").trim())) return false;
+        if (index === 0) return true;
+        const key = row.map((cell) => String(cell ?? "")).join("\u001f");
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    const workbook = XLSX.utils.book_new();
+    const cleanSheet = XLSX.utils.aoa_to_sheet(cleaned);
+    cleanSheet["!cols"] = Array.from({ length: Math.min(30, Math.max(1, ...cleaned.map((row) => row.length))) }, () => ({ wch: 18 }));
+    XLSX.utils.book_append_sheet(workbook, cleanSheet, "DU_LIEU_DA_LAM_SACH");
+
+    const headerRow = detectHeaderRow(cleaned);
+    const normalizedHeaders = (cleaned[headerRow] || []).map(normalizeHeader);
+    const codeColumn = findColumn(normalizedHeaders, "code");
+    const sheetColumn = findColumn(normalizedHeaders, "sheet");
+    const parcelColumn = findColumn(normalizedHeaders, "parcel");
+    const issues: Array<Record<string, CellValue>> = [];
+    const keyRows = new Map<string, number[]>();
+    if (codeColumn >= 0 && sheetColumn >= 0 && parcelColumn >= 0) {
+      cleaned.slice(headerRow + 1).forEach((row, offset) => {
+        const excelRow = headerRow + offset + 2;
+        const code = String(row[codeColumn] ?? "").replace(/\D/g, "");
+        const mapSheet = normalizeKeyNumber(row[sheetColumn]);
+        const parcel = normalizeKeyNumber(row[parcelColumn]);
+        const key = buildParcelKey(code, mapSheet, parcel);
+        if (!/^\d{5}$/.test(code)) issues.push({ "Dòng": excelRow, "Loại lỗi": "Mã xã không hợp lệ", "Mã xã": code, "Số tờ": mapSheet, "Số thửa": parcel, "Khuyến nghị": "Nhập đúng mã xã 5 chữ số" });
+        if (!mapSheet) issues.push({ "Dòng": excelRow, "Loại lỗi": "Thiếu số tờ", "Mã xã": code, "Số tờ": mapSheet, "Số thửa": parcel, "Khuyến nghị": "Bổ sung số tờ bản đồ" });
+        if (!parcel) issues.push({ "Dòng": excelRow, "Loại lỗi": "Thiếu số thửa", "Mã xã": code, "Số tờ": mapSheet, "Số thửa": parcel, "Khuyến nghị": "Bổ sung số thửa" });
+        if (key) keyRows.set(key, [...(keyRows.get(key) || []), excelRow]);
+      });
+      keyRows.forEach((rowNumbers, key) => {
+        if (rowNumbers.length < 2) return;
+        const [code, mapSheet, parcel] = key.split("|");
+        issues.push({ "Dòng": rowNumbers.join(", "), "Loại lỗi": "Trùng khóa thửa đất", "Mã xã": code, "Số tờ": mapSheet, "Số thửa": parcel, "Khuyến nghị": "Kiểm tra các dòng có cùng Mã xã + Số tờ + Số thửa" });
+      });
+    } else {
+      issues.push({ "Dòng": "—", "Loại lỗi": "Không nhận diện đủ cột", "Mã xã": "", "Số tờ": "", "Số thửa": "", "Khuyến nghị": "Đặt tiêu đề cột rõ ràng: Mã xã, Số tờ, Số thửa" });
+    }
+    const reportSheet = XLSX.utils.json_to_sheet(issues.length ? issues : [{ "Dòng": "—", "Loại lỗi": "Không phát hiện lỗi khóa địa chính", "Mã xã": "", "Số tờ": "", "Số thửa": "", "Khuyến nghị": "Vẫn cần chuyên viên kiểm tra trước khi sử dụng" }]);
+    reportSheet["!cols"] = [{ wch: 15 }, { wch: 28 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 48 }];
+    XLSX.utils.book_append_sheet(workbook, reportSheet, "BAO_CAO_KIEM_TRA");
+    XLSX.writeFile(workbook, `${safeBaseName(file.name)}_DA_LAM_SACH.xlsx`, { compression: true });
   }
 
   function reset() {
@@ -941,16 +1023,17 @@ export default function FileProcessor() {
                     <label>Nhóm hồ sơ<select value={landFields.prefix} onChange={(event) => updateLandField("prefix", event.target.value as LandFields["prefix"])}><option value="CHUACOGIAY">Chưa có giấy</option><option value="COGCN">Có GCN</option></select></label>
                     <label>Hậu tố<select value={landFields.suffix} onChange={(event) => updateLandField("suffix", event.target.value as LandFields["suffix"])}><option value="GT">GT</option><option value="TBXN">TBXN</option><option value="DDK">DDK</option></select></label>
                   </div>
+                  {landReviewNotes.length > 0 && <div className="land-review-list" role="status"><strong>Kiểm tra trước khi xuất:</strong><ul>{landReviewNotes.map((note) => <li key={note}>{note}</li>)}</ul></div>}
                   <div className={`filename-suggestion ${suggestedFileName ? "complete" : "incomplete"}`}>
                     <span>Tên tệp đề xuất</span>
                     <strong>{suggestedFileName || "Cần nhập đủ mã xã, số tờ và số thửa"}</strong>
                     {suggestedFileName && <button type="button" onClick={downloadRenamedCopy}>Tải bản sao theo tên chuẩn <span aria-hidden="true">↓</span></button>}
                   </div>
-                  <p className="field-rule"><span aria-hidden="true">i</span>Số tờ lâm nghiệp 110000 hoặc 210000 được giữ nguyên. Tệp gốc không bị đổi tên hay ghi đè.</p>
+                  <p className="field-rule"><span aria-hidden="true">i</span>Hồ sơ RSX/RPH/RDD dùng tờ 1, 2, 3 được chuẩn hóa thành 110000, 210000, 310000. Tệp gốc không bị đổi tên hay ghi đè.</p>
                 </div>
               )}
 
-              <div className="processor-actions"><button type="button" className="download-button" onClick={exportResult}>Tải kết quả <span aria-hidden="true">↓</span></button><button type="button" className="secondary-action" onClick={() => inputRef.current?.click()}>Xử lý tệp khác</button></div>
+              <div className="processor-actions"><button type="button" className="download-button" onClick={exportResult}>Tải kết quả <span aria-hidden="true">↓</span></button>{result.kind === "excel" && <button type="button" className="secondary-action" onClick={() => void exportCleanedWorkbook()}>Tải Excel đã làm sạch</button>}<button type="button" className="secondary-action" onClick={() => inputRef.current?.click()}>Xử lý tệp khác</button></div>
             </div>
           )}
         </section>

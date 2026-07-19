@@ -1,0 +1,21 @@
+CẬP NHẬT NHANH WEBSITE SỸ LAND
+
+1. Tạo GitHub Release v11.3.0 và tải SYLAND_Setup_11.3.0.zip lên.
+2. Mở tab Code của kho SY-LAND.
+3. Chọn Add file → Upload files.
+4. Tải toàn bộ các tệp mã nguồn trong thư mục này lên kho; không tải các tệp hướng dẫn .txt nếu không cần.
+5. Chọn Commit changes.
+6. Mở tab Actions và chờ dấu tích xanh.
+7. Kiểm tra website và nút tải phiên bản 11.3.0.
+
+Các tệp mã nguồn cần tải:
+- page.tsx
+- file-processor.tsx
+- pdf-toolkit.tsx
+- account-portal.tsx
+- chat-assistant.tsx
+- software-release.tsx
+- system-check.tsx
+- globals.css
+- github-pages.html
+- package.json

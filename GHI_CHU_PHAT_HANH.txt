@@ -1,11 +1,11 @@
-SỸ LAND 11.2.0
+SỸ LAND 11.3.0
 
-Ngày chuẩn bị phát hành: 18/07/2026
-Tên gói tải: SYLAND_Setup_11.2.0.zip
-Tệp cài đặt bên trong: SYLAND_Setup_11.2.0.exe
-Dung lượng gói ZIP: 136.288.437 byte (khoảng 130 MB)
-SHA-256 gói ZIP: 0661eba7ac01eaa1e893b007280a2846722e44ce771639f9cd60e0f806a07890
-SHA-256 tệp EXE: ea63f7ed10c0f4a0879c9c3ea152ee771f5c5eb097c35dcf5d522375951da64b
+Ngày chuẩn bị phát hành: 19/07/2026
+Tên gói tải: SYLAND_Setup_11.3.0.zip
+Tệp cài đặt bên trong: SYLAND_Setup_11.3.0.exe
+Dung lượng gói ZIP: 136.297.353 byte (khoảng 130 MB)
+SHA-256 gói ZIP: 3843cd8a67510865ac892d93fcfcc6d6e217338f6f0eaa1dad0169a84f05a41b
+SHA-256 tệp EXE: 694ee632074a3324d376c26d12216af84bfdf1b488f98b1f0eb2dd3f8ef0b347
 
 Nội dung giới thiệu:
 - Bộ công cụ hỗ trợ xử lý hồ sơ và dữ liệu đất đai trên Windows.

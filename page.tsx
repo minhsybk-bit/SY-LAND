@@ -5,6 +5,7 @@ import ChatAssistant from "./chat-assistant";
 import SoftwareRelease from "./software-release";
 import PdfToolkit from "./pdf-toolkit";
 import AccountPortal from "./account-portal";
+import SystemCheck from "./system-check";
 
 const features = [
   {
@@ -103,12 +104,12 @@ const plans = [
 ];
 
 const softwareModules = [
-  { code: "01", title: "Chuẩn hóa và đổi tên hồ sơ", status: "available", label: "Đang sử dụng", items: ["Đổi tên PDF, Word theo Mã xã · Số tờ · Số thửa", "Đổi hậu tố GT, TBXN, DDK hàng loạt", "Nhận đúng mã xã 02140, 02143, 02146 theo tên thôn", "Giữ số tờ lâm nghiệp 110000, 210000 cho RSX/RPH/RDD"] },
-  { code: "02", title: "OCR và trích xuất dữ liệu", status: "improving", label: "Đang hoàn thiện", items: ["OCR tiếng Việt cho PDF scan", "Đọc số tờ, số thửa, diện tích và địa chỉ", "Hiển thị tiến độ đã thực hiện/đang thực hiện", "Cho chuyên viên sửa và xác nhận trước khi xuất"] },
-  { code: "03", title: "PDF và tài liệu văn phòng", status: "roadmap", label: "Theo lộ trình", items: ["Tách, ghép và xoay PDF hàng loạt", "Chuyển khổ A3 sang A4 để ký số", "Word sang PDF hàng loạt", "PDF sang Word ưu tiên giữ bố cục và phông chữ"] },
-  { code: "04", title: "Tổng hợp PDF sang Excel", status: "improving", label: "Đang hoàn thiện", items: ["Tổng hợp các trường dữ liệu được chọn", "Tạo biểu đồ và tỷ lệ hoàn thành", "Chọn cột xuất linh hoạt", "Thêm sheet so sánh và báo cáo trường còn thiếu"] },
+  { code: "01", title: "Chuẩn hóa và đổi tên hồ sơ", status: "available", label: "Đang sử dụng", items: ["Đổi tên PDF, Word theo Mã xã · Số tờ · Số thửa", "Đổi hậu tố GT, TBXN, DDK hàng loạt", "Khai báo tỉnh, xã, thôn/xóm cũ và mới trên toàn quốc", "Chuẩn hóa tờ đất rừng 110000, 210000, 310000 cho RSX/RPH/RDD"] },
+  { code: "02", title: "OCR và trích xuất dữ liệu", status: "available", label: "Đang sử dụng", items: ["OCR tiếng Việt cho PDF scan trên thiết bị", "Đọc mã xã, số tờ, số thửa và diện tích", "OCR tùy chọn tối đa 5 PDF trong một lượt hàng loạt", "Cho chuyên viên sửa và xác nhận trước khi xuất"] },
+  { code: "03", title: "PDF và tài liệu văn phòng", status: "available", label: "Đang sử dụng", items: ["Tách, ghép, xoay, sắp xếp và xóa trang PDF", "Chuyển khổ A3 hoặc khổ khác sang A4", "PDF sang JPG/PNG và JPG/PNG/WebP sang PDF", "Nén ảnh, OCR, so sánh và làm sạch metadata"] },
+  { code: "04", title: "Tổng hợp và kiểm tra Excel", status: "available", label: "Đang sử dụng", items: ["Làm sạch khoảng trắng, dòng trống và dòng trùng", "Tự nhận diện cột mã xã, số tờ và số thửa", "Phát hiện khóa địa chính thiếu, sai hoặc trùng", "Xuất dữ liệu sạch kèm sheet báo cáo kiểm tra"] },
   { code: "05", title: "Đối chiếu CSDL đất đai", status: "available", label: "Đang sử dụng", items: ["So khớp mã xã, số tờ, số thửa với Excel tổng", "Phát hiện trùng, thiếu và không khớp", "Lọc hoặc di chuyển hồ sơ không trùng", "Giữ nguyên dữ liệu gốc và xuất báo cáo mới"] },
-  { code: "06", title: "Phân loại và vận hành", status: "roadmap", label: "Theo lộ trình", items: ["Tự tạo cấu trúc thư mục Có GCN/Chưa có giấy", "Phân nhóm GT, TBXN, DDK", "Cài đặt Windows và tạo lối tắt Desktop", "Kiểm tra, tải và thông báo phiên bản mới"] },
+  { code: "06", title: "Phân loại và vận hành", status: "available", label: "Đang sử dụng", items: ["Tự tạo cấu trúc thư mục Có GCN/Chưa có giấy trong ZIP", "Phân nhóm GT, TBXN, DDK và kèm nhật ký CSV", "Tải bộ cài Windows từ GitHub Release", "Kiểm tra SHA-256 và tự hiển thị phiên bản mới"] },
 ];
 
 export default function Home() {
@@ -252,6 +253,7 @@ export default function Home() {
           </section>
 
           <SoftwareRelease />
+          <SystemCheck />
           <AccountPortal />
 
           <section className="pricing" id="goi-dich-vu" aria-labelledby="pricing-title">
@@ -273,7 +275,7 @@ export default function Home() {
             <TrialRequest />
             <div className="commercial-roadmap" id="lo-trinh">
               <div><span>01</span><strong>Nguyên mẫu đang hoạt động</strong><small>Xử lý cục bộ, chưa thu phí</small></div>
-              <div><span>02</span><strong>Tài khoản và kho hồ sơ</strong><small>Giai đoạn MVP tiếp theo</small></div>
+              <div><span>02</span><strong>Tài khoản quản trị cục bộ</strong><small>Đã có để kiểm thử; kho máy chủ là giai đoạn tiếp theo</small></div>
               <div><span>03</span><strong>Thanh toán và vận hành</strong><small>Mở sau khi kiểm thử bảo mật</small></div>
             </div>
           </section>

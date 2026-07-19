@@ -1,0 +1,15 @@
+SỸ LAND — GÓI CẬP NHẬT WEBSITE 11.3.0
+
+Ngày đóng gói: 19/07/2026
+Phần mềm phát hành: SỸ LAND 11.3.0
+Tag GitHub Release: v11.3.0
+Tệp phát hành: SYLAND_Setup_11.3.0.zip
+
+SHA-256 ZIP phần mềm:
+3843cd8a67510865ac892d93fcfcc6d6e217338f6f0eaa1dad0169a84f05a41b
+
+SHA-256 EXE bên trong:
+694ee632074a3324d376c26d12216af84bfdf1b488f98b1f0eb2dd3f8ef0b347
+
+Website: https://minhsybk-bit.github.io/SY-LAND/
+Kho mã: https://github.com/minhsybk-bit/SY-LAND

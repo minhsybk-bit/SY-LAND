@@ -6,11 +6,11 @@ type ReleaseAsset = { name: string; size: number; browser_download_url: string; 
 type GithubRelease = { tag_name: string; name: string; html_url: string; published_at: string; assets: ReleaseAsset[] };
 
 const FALLBACK: GithubRelease = {
-  tag_name: "v11.2.0",
-  name: "SỸ LAND 11.2.0",
-  html_url: "https://github.com/minhsybk-bit/SY-LAND/releases/tag/v11.2.0",
-  published_at: "2026-07-18T00:00:00Z",
-  assets: [{ name: "SYLAND_Setup_11.2.0.zip", size: 136288437, browser_download_url: "https://github.com/minhsybk-bit/SY-LAND/releases/download/v11.2.0/SYLAND_Setup_11.2.0.zip", digest: "sha256:0661eba7ac01eaa1e893b007280a2846722e44ce771639f9cd60e0f806a07890" }],
+  tag_name: "v11.3.0",
+  name: "SỸ LAND 11.3.0",
+  html_url: "https://github.com/minhsybk-bit/SY-LAND/releases/tag/v11.3.0",
+  published_at: "2026-07-19T00:00:00Z",
+  assets: [{ name: "SYLAND_Setup_11.3.0.zip", size: 136297353, browser_download_url: "https://github.com/minhsybk-bit/SY-LAND/releases/download/v11.3.0/SYLAND_Setup_11.3.0.zip", digest: "sha256:3843cd8a67510865ac892d93fcfcc6d6e217338f6f0eaa1dad0169a84f05a41b" }],
 };
 
 export default function SoftwareRelease() {
@@ -32,7 +32,7 @@ export default function SoftwareRelease() {
   const installer = useMemo(() => release.assets.find((asset) => asset.name.toLowerCase().endsWith(".exe")) || release.assets[0] || FALLBACK.assets[0], [release]);
   const version = release.tag_name.replace(/^v/i, "");
   const size = `${(installer.size / 1024 / 1024).toLocaleString("vi-VN", { maximumFractionDigits: 1 })} MB`;
-  const checksum = installer.digest?.replace(/^sha256:/i, "") || (version === "11.2.0" ? FALLBACK.assets[0].digest!.replace("sha256:", "") : "Xem tại trang phát hành GitHub");
+  const checksum = installer.digest?.replace(/^sha256:/i, "") || (version === FALLBACK.tag_name.replace(/^v/i, "") ? FALLBACK.assets[0].digest!.replace("sha256:", "") : "Xem tại trang phát hành GitHub");
 
   async function verifyFile(file?: File) {
     if (!file) return;
