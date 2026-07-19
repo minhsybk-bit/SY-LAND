@@ -2,7 +2,7 @@
 
 import { ChangeEvent, useMemo, useRef, useState } from "react";
 
-type Mode = "split" | "merge" | "rotate" | "organize" | "resize" | "annotate" | "optimize" | "compare" | "sanitize" | "ocr" | "compress";
+type Mode = "split" | "merge" | "rotate" | "organize" | "resize" | "annotate" | "optimize" | "compare" | "sanitize" | "ocr" | "compress" | "dedupe";
 type PagePreview = { page: number; image: string };
 type PageComparison = { page: number; similarity: number | null; status: "same" | "review" | "changed" | "missing" | "scan"; note: string };
 type CompareResult = { pagesA: number; pagesB: number; changedPages: number[]; samePages: number; reviewPages: number; scanPages: number; textCoverage: number; details: PageComparison[] };
@@ -72,6 +72,8 @@ export default function PdfToolkit() {
   const [numberPosition, setNumberPosition] = useState<"bottom" | "top">("bottom");
   const [compareResult, setCompareResult] = useState<CompareResult | null>(null);
   const [compressQuality, setCompressQuality] = useState<"small" | "balanced" | "clear">("balanced");
+  const [duplicateGroups, setDuplicateGroups] = useState<number[][]>([]);
+  const [duplicateScanned, setDuplicateScanned] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const totalSize = useMemo(() => files.reduce((sum, file) => sum + file.size, 0), [files]);
 
@@ -100,6 +102,7 @@ export default function PdfToolkit() {
 
   async function chooseFiles(event: ChangeEvent<HTMLInputElement>) {
     const selected = Array.from(event.target.files || []).filter((file) => file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf"));
+    setDuplicateGroups([]); setDuplicateScanned(false); setCompareResult(null);
     setFiles(mode === "merge" ? selected.slice(0, 30) : mode === "compare" ? selected.slice(0, 2) : selected.slice(0, 1));
     setNotice(selected.length ? "" : "Hãy chọn tệp PDF hợp lệ.");
     event.target.value = "";
@@ -116,7 +119,7 @@ export default function PdfToolkit() {
     });
   }
 
-  function changeMode(next: Mode) { setMode(next); setFiles([]); setPreviews([]); setRemovedPages(new Set()); setSelectedPages(new Set()); setCompareResult(null); setNotice(""); }
+  function changeMode(next: Mode) { setMode(next); setFiles([]); setPreviews([]); setRemovedPages(new Set()); setSelectedPages(new Set()); setCompareResult(null); setDuplicateGroups([]); setDuplicateScanned(false); setNotice(""); }
 
   function movePage(index: number, direction: -1 | 1) { setPreviews((current) => { const target = index + direction; if (target < 0 || target >= current.length) return current; const next = [...current]; [next[index], next[target]] = [next[target], next[index]]; return next; }); }
   function toggleRemoved(page: number) { setRemovedPages((current) => { const next = new Set(current); if (next.has(page)) next.delete(page); else next.add(page); return next; }); }
@@ -183,6 +186,30 @@ export default function PdfToolkit() {
         } finally { await worker.terminate(); }
         downloadText(output.join("\n"), `${baseName(files[0].name)}_OCR.txt`);
         setNotice(`Đã OCR ${source.numPages} trang và xuất tệp văn bản. Cần kiểm tra lại tên riêng, số thửa và diện tích.`);
+        return;
+      }
+      if (mode === "dedupe") {
+        const pdfjs = await import("pdfjs-dist");
+        const workerUrl = await import("pdfjs-dist/build/pdf.worker.min.mjs?url");
+        pdfjs.GlobalWorkerOptions.workerSrc = workerUrl.default;
+        const source = await pdfjs.getDocument({ data: new Uint8Array(await files[0].arrayBuffer()) }).promise;
+        if (source.numPages > 150) throw new Error("Quét trang trùng hỗ trợ tối đa 150 trang mỗi lượt.");
+        const hashes = new Map<string, number[]>();
+        for (let pageNumber = 1; pageNumber <= source.numPages; pageNumber++) {
+          setNotice(`Đang đối chiếu trang ${pageNumber}/${source.numPages}…`);
+          const page = await source.getPage(pageNumber); const base = page.getViewport({ scale: 1 });
+          const viewport = page.getViewport({ scale: Math.min(.75, 700 / Math.max(base.width, base.height)) });
+          const canvas = document.createElement("canvas"); canvas.width = Math.ceil(viewport.width); canvas.height = Math.ceil(viewport.height);
+          await page.render({ canvas, canvasContext: canvas.getContext("2d", { willReadFrequently: true })!, viewport, background: "white" }).promise;
+          const data = canvas.getContext("2d", { willReadFrequently: true })!.getImageData(0, 0, canvas.width, canvas.height).data;
+          const digest = await crypto.subtle.digest("SHA-256", data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength));
+          const hash = Array.from(new Uint8Array(digest)).map((value) => value.toString(16).padStart(2, "0")).join("");
+          hashes.set(hash, [...(hashes.get(hash) || []), pageNumber]);
+        }
+        const groups = [...hashes.values()].filter((group) => group.length > 1);
+        setDuplicateGroups(groups); setDuplicateScanned(true);
+        const repeated = groups.reduce((sum, group) => sum + group.length - 1, 0);
+        setNotice(repeated ? `Phát hiện ${repeated} trang lặp trong ${groups.length} nhóm. Trang đầu mỗi nhóm sẽ được giữ lại.` : `Đã kiểm tra ${source.numPages} trang; không phát hiện trang giống hệt nhau.`);
         return;
       }
       const { PDFDocument, StandardFonts, degrees, rgb } = await import("pdf-lib");
@@ -323,6 +350,7 @@ export default function PdfToolkit() {
           <button className={mode === "sanitize" ? "active" : ""} type="button" onClick={() => changeMode("sanitize")}>Làm sạch metadata</button>
           <button className={mode === "ocr" ? "active" : ""} type="button" onClick={() => changeMode("ocr")}>OCR PDF scan</button>
           <button className={mode === "compress" ? "active" : ""} type="button" onClick={() => changeMode("compress")}>Nén ảnh PDF</button>
+          <button className={mode === "dedupe" ? "active" : ""} type="button" onClick={() => changeMode("dedupe")}>Tìm trang trùng</button>
         </div>
         <div className="pdf-tool-body">
           <div className="pdf-pick">
@@ -342,8 +370,9 @@ export default function PdfToolkit() {
             {mode === "sanitize" && <div className="optimize-info"><span>⌫</span><div><h3>Làm sạch metadata</h3><p>Xóa tiêu đề, tác giả, chủ đề và từ khóa ẩn trong PDF trước khi gửi cho người khác. Nội dung và hình ảnh hiển thị được giữ nguyên.</p><ul><li>Không xóa chữ ký hoặc chú thích hiển thị</li><li>Không thay thế việc kiểm tra dữ liệu cá nhân trong nội dung</li><li>Tạo tệp mới, không ghi đè bản gốc</li></ul></div></div>}
             {mode === "ocr" && <div className="optimize-info"><span>OCR</span><div><h3>Nhận dạng chữ tiếng Việt</h3><p>Chuyển từng trang scan thành văn bản TXT có phân cách trang. Xử lý cục bộ, tối đa 40 trang mỗi lượt.</p><ul><li>Kết quả OCR cần được người dùng kiểm tra lại</li><li>Không tự động thay thế dữ liệu hồ sơ gốc</li><li>Độ chính xác phụ thuộc chất lượng bản scan</li></ul></div></div>}
             {mode === "compress" && <><h3>Mức nén hình ảnh</h3><div className="compression-options">{([{ key: "small", title: "Dung lượng nhỏ", note: "Phù hợp gửi xem nhanh" }, { key: "balanced", title: "Cân bằng", note: "Khuyến nghị cho hồ sơ thông thường" }, { key: "clear", title: "Rõ nét", note: "Ưu tiên chữ nhỏ và bản đồ" }] as const).map((item) => <label key={item.key}><input type="radio" checked={compressQuality === item.key} onChange={() => setCompressQuality(item.key)} /><span><b>{item.title}</b><small>{item.note}</small></span></label>)}</div><p className="compression-warning"><b>Lưu ý:</b> Bản nén được dựng lại từ ảnh từng trang nên có thể mất lớp chữ tìm kiếm, liên kết, biểu mẫu và trạng thái chữ ký số. Luôn giữ tệp gốc.</p></>}
+            {mode === "dedupe" && <div className="dedupe-panel"><div className="optimize-info"><span>≡</span><div><h3>Phát hiện trang giống hệt nhau</h3><p>Tạo ảnh kiểm tra cục bộ rồi so sánh SHA-256 của từng trang. Chỉ đánh dấu khi hình ảnh trang khớp hoàn toàn ở cùng độ phân giải kiểm tra.</p><ul><li>Giữ trang xuất hiện đầu tiên</li><li>Không tự xóa trước khi người dùng xác nhận tải</li><li>Tối đa 150 trang mỗi lượt</li></ul></div></div>{duplicateScanned && <div className="duplicate-results">{duplicateGroups.length ? duplicateGroups.map((group, index) => <p key={group.join("-")}><b>Nhóm {index + 1}</b><span>Giữ trang {group[0]}</span><span>Đề xuất bỏ: {group.slice(1).join(", ")}</span></p>) : <p className="no-duplicate"><b>Không có trang trùng</b><span>Không phát hiện trang có hình ảnh giống hệt nhau.</span></p>}</div>}</div>}
             {mode !== "merge" && mode !== "organize" && mode !== "compare" && files[0] && <div className="single-pdf"><span>✓</span><p><b>{files[0].name}</b><small>{(files[0].size / 1024 / 1024).toFixed(1)} MB</small></p><button type="button" onClick={() => setFiles([])}>×</button></div>}
-            <div className="pdf-run"><p className={notice.includes("Không") ? "error" : ""}>{notice || (files.length ? `${files.length} tệp · ${(totalSize / 1024 / 1024).toFixed(1)} MB` : "Kết quả sẽ được tải về thiết bị.")}</p><div className="pdf-run-actions">{mode === "compare" && compareResult && <button className="secondary-pdf-action" type="button" onClick={() => { const rows = ["Trang,Ty_le_tuong_dong,Phan_loai,Ghi_chu", ...compareResult.details.map((item) => `${item.page},${item.similarity === null ? "" : item.similarity + "%"},${item.status},\"${item.note.replace(/\"/g, '\"\"')}\"`)]; rows.unshift(`Tep_B,\"${files[1].name.replace(/\"/g, '\"\"')}\"`, `Tep_A,\"${files[0].name.replace(/\"/g, '\"\"')}\"`); downloadText("\uFEFF" + rows.join("\r\n"), `SYLAND_BAO_CAO_SO_SANH_${Date.now()}.csv`, "text/csv;charset=utf-8"); }}>Tải báo cáo CSV</button>}<button type="button" disabled={busy || !files.length || (mode === "compare" && files.length !== 2) || (mode === "organize" && !previews.length)} onClick={() => void run()}>{busy ? "Đang xử lý…" : mode === "merge" ? "Nối PDF" : mode === "rotate" ? "Xoay và tải PDF" : mode === "organize" ? "Xuất PDF đã sắp xếp" : mode === "resize" ? "Chuyển và tải PDF A4" : mode === "annotate" ? "Thêm dấu và tải PDF" : mode === "optimize" ? "Tối ưu và tải PDF" : mode === "compare" ? "So sánh hai PDF" : mode === "sanitize" ? "Làm sạch và tải PDF" : mode === "ocr" ? "OCR và tải TXT" : mode === "compress" ? "Nén và tải PDF" : "Tách và tải kết quả"}</button></div></div>
+            <div className="pdf-run"><p className={notice.includes("Không") ? "error" : ""}>{notice || (files.length ? `${files.length} tệp · ${(totalSize / 1024 / 1024).toFixed(1)} MB` : "Kết quả sẽ được tải về thiết bị.")}</p><div className="pdf-run-actions">{mode === "compare" && compareResult && <button className="secondary-pdf-action" type="button" onClick={() => { const rows = ["Trang,Ty_le_tuong_dong,Phan_loai,Ghi_chu", ...compareResult.details.map((item) => `${item.page},${item.similarity === null ? "" : item.similarity + "%"},${item.status},\"${item.note.replace(/\"/g, '\"\"')}\"`)]; rows.unshift(`Tep_B,\"${files[1].name.replace(/\"/g, '\"\"')}\"`, `Tep_A,\"${files[0].name.replace(/\"/g, '\"\"')}\"`); downloadText("\uFEFF" + rows.join("\r\n"), `SYLAND_BAO_CAO_SO_SANH_${Date.now()}.csv`, "text/csv;charset=utf-8"); }}>Tải báo cáo CSV</button>}{mode === "dedupe" && duplicateGroups.length > 0 && <button className="secondary-pdf-action" type="button" onClick={() => { void (async () => { setBusy(true); try { const { PDFDocument } = await import("pdf-lib"); const source = await PDFDocument.load(await files[0].arrayBuffer(), { ignoreEncryption: false }); const remove = new Set(duplicateGroups.flatMap((group) => group.slice(1))); const keep = source.getPageIndices().filter((index) => !remove.has(index + 1)); const output = await PDFDocument.create(); (await output.copyPages(source, keep)).forEach((page) => output.addPage(page)); downloadBlob(await output.save({ useObjectStreams: true }), `${baseName(files[0].name)}_BO_TRANG_TRUNG.pdf`); setNotice(`Đã tạo PDF mới gồm ${keep.length} trang, loại ${remove.size} trang lặp. Tệp gốc không thay đổi.`); } catch (reason) { console.error(reason); setNotice("Không tạo được PDF đã loại trang trùng."); } finally { setBusy(false); } })(); }}>Tải PDF đã loại trùng</button>}<button type="button" disabled={busy || !files.length || (mode === "compare" && files.length !== 2) || (mode === "organize" && !previews.length)} onClick={() => void run()}>{busy ? "Đang xử lý…" : mode === "merge" ? "Nối PDF" : mode === "rotate" ? "Xoay và tải PDF" : mode === "organize" ? "Xuất PDF đã sắp xếp" : mode === "resize" ? "Chuyển và tải PDF A4" : mode === "annotate" ? "Thêm dấu và tải PDF" : mode === "optimize" ? "Tối ưu và tải PDF" : mode === "compare" ? "So sánh hai PDF" : mode === "sanitize" ? "Làm sạch và tải PDF" : mode === "ocr" ? "OCR và tải TXT" : mode === "compress" ? "Nén và tải PDF" : mode === "dedupe" ? "Quét trang trùng" : "Tách và tải kết quả"}</button></div></div>
           </div>
         </div>
       </div>
