@@ -8,6 +8,7 @@ import AccountPortal from "./account-portal";
 import SystemCheck from "./system-check";
 import SupportCenter from "./support-center";
 import LegalCenter from "./legal-center";
+import PrivacyCenter from "./privacy-center";
 
 const features = [
   {
@@ -259,6 +260,7 @@ export default function Home() {
           <AccountPortal />
           <SupportCenter />
           <LegalCenter />
+          <PrivacyCenter />
 
           <section className="pricing" id="goi-dich-vu" aria-labelledby="pricing-title">
             <div className="section-heading split-heading pricing-heading">

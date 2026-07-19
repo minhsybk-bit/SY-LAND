@@ -361,7 +361,9 @@ async function processExcel(file: File): Promise<ProcessedResult> {
 
 function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record: HistoryRecord) => void; locationProfile: LocationProfile }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
   const masterInputRef = useRef<HTMLInputElement>(null);
+  const stopRequestedRef = useRef(false);
   const [items, setItems] = useState<BatchItem[]>([]);
   const [running, setRunning] = useState(false);
   const [master, setMaster] = useState<MasterSheet | null>(null);
@@ -374,6 +376,10 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
   const [archiveMode, setArchiveMode] = useState<"flat" | "folders">("folders");
   const [archiveRoot, setArchiveRoot] = useState("HO_SO_DAT_DAI");
   const [batchOcr, setBatchOcr] = useState(false);
+  const [autoClassify, setAutoClassify] = useState(true);
+  const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, label: "" });
+  const [contentHashes, setContentHashes] = useState<Record<string, string>>({});
+  const [contentDuplicateIds, setContentDuplicateIds] = useState<Set<string>>(new Set());
 
   const suggestedNames = useMemo(
     () => items.map((item) => buildSuggestedName(item.file, item.fields)),
@@ -508,8 +514,10 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
         const extension = file.name.split(".").pop()?.toLowerCase() || "";
         const valid = ["docx", "pdf", "xlsx", "xls", "csv"].includes(extension) && file.size <= MAX_FILE_SIZE;
         const fields = extractLandFields("", file.name, locationProfile);
-        fields.prefix = batchPrefix;
-        fields.suffix = batchSuffix;
+        if (!autoClassify) {
+          fields.prefix = batchPrefix;
+          fields.suffix = batchSuffix;
+        }
         return {
           id: `${file.name}-${file.size}-${file.lastModified}-${index}`,
           file,
@@ -534,12 +542,54 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
     setItems((current) => current.map((item) => ({ ...item, fields: { ...item.fields, prefix: batchPrefix, suffix: batchSuffix } })));
   }
 
+  async function scanContentDuplicates() {
+    if (!items.length || running) return;
+    setRunning(true);
+    const hashes: Record<string, string> = {};
+    const firstByHash = new Map<string, string>();
+    const duplicates = new Set<string>();
+    setBatchProgress({ current: 0, total: items.length, label: "Đang kiểm tra tệp trùng…" });
+    try {
+      for (let index = 0; index < items.length; index += 1) {
+        const item = items[index];
+        setBatchProgress({ current: index, total: items.length, label: `SHA-256 · ${item.file.name}` });
+        const digest = await crypto.subtle.digest("SHA-256", await item.file.arrayBuffer());
+        const hash = Array.from(new Uint8Array(digest)).map((value) => value.toString(16).padStart(2, "0")).join("");
+        hashes[item.id] = hash;
+        if (firstByHash.has(hash)) duplicates.add(item.id);
+        else firstByHash.set(hash, item.id);
+        setBatchProgress({ current: index + 1, total: items.length, label: `SHA-256 · ${item.file.name}` });
+      }
+      setContentHashes(hashes);
+      setContentDuplicateIds(duplicates);
+      setItems((current) => current.map((item) => duplicates.has(item.id) ? { ...item, status: "review", message: [item.message, "Trùng nội dung với tệp đã thêm trước đó"].filter(Boolean).join(" · ") } : item));
+      setBatchProgress({ current: items.length, total: items.length, label: duplicates.size ? `Phát hiện ${duplicates.size} tệp trùng nội dung` : "Không phát hiện tệp trùng nội dung" });
+    } catch (reason) {
+      console.error(reason);
+      setBatchProgress({ current: 0, total: items.length, label: "Không thể tính SHA-256 trên trình duyệt này" });
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  function removeContentDuplicates() {
+    if (!contentDuplicateIds.size || running) return;
+    setItems((current) => current.filter((item) => !contentDuplicateIds.has(item.id)));
+    setContentDuplicateIds(new Set());
+  }
+
   async function processAll() {
     if (!items.length || running) return;
     setRunning(true);
+    stopRequestedRef.current = false;
+    const processable = items.filter((item) => item.status !== "error");
+    setBatchProgress({ current: 0, total: processable.length, label: "Đang chuẩn bị…" });
     let ocrPdfCount = 0;
+    let completedCount = 0;
     for (const item of items) {
+      if (stopRequestedRef.current) break;
       if (item.status === "error") continue;
+      setBatchProgress({ current: completedCount, total: processable.length, label: item.file.name });
       updateItem(item.id, { status: "processing", message: "Đang đọc nội dung…" });
       try {
         const extension = item.file.name.split(".").pop()?.toLowerCase();
@@ -574,8 +624,12 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
         console.error(reason);
         updateItem(item.id, { status: "error", message: "Không đọc được tệp" });
       }
+      completedCount += 1;
+      setBatchProgress({ current: completedCount, total: processable.length, label: item.file.name });
     }
+    if (stopRequestedRef.current) setItems((current) => current.map((item) => item.status === "processing" ? { ...item, status: "review", message: "Đã dừng; cần xử lý lại tệp này" } : item));
     setRunning(false);
+    setBatchProgress((current) => ({ ...current, label: stopRequestedRef.current ? "Đã dừng theo yêu cầu" : "Đã hoàn thành lượt xử lý" }));
   }
 
   async function downloadZip() {
@@ -589,7 +643,7 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
       const path = archiveMode === "folders" ? `${safeRoot}/${item.fields.prefix}/${item.fields.suffix}/${fileName}` : fileName;
       archive[path] = new Uint8Array(await item.file.arrayBuffer());
     }
-    const manifestRows: CellValue[][] = [["STT", "Tệp nguồn", "Tên chuẩn", "Mã xã", "Số tờ", "Số thửa", "Trạng thái", "Ghi chú"], ...validItems.map((item, index) => [index + 1, item.file.name, buildSuggestedName(item.file, item.fields), item.fields.communeCode, item.fields.mapSheet, item.fields.parcel, item.status, item.message])];
+    const manifestRows: CellValue[][] = [["STT", "Tệp nguồn", "Tên chuẩn", "Mã xã", "Số tờ", "Số thửa", "SHA-256", "Trạng thái", "Ghi chú"], ...validItems.map((item, index) => [index + 1, item.file.name, buildSuggestedName(item.file, item.fields), item.fields.communeCode, item.fields.mapSheet, item.fields.parcel, contentHashes[item.id] || "Chưa tính", item.status, item.message])];
     archive[`${safeBaseName(archiveRoot.trim() || "HO_SO_DAT_DAI")}_NHAT_KY.csv`] = new TextEncoder().encode(`\uFEFF${manifestRows.map((row) => row.map(escapeCsv).join(",")).join("\r\n")}`);
     const zipped = zipSync(archive, { level: 6 });
     const blob = new Blob([zipped], { type: "application/zip" });
@@ -634,6 +688,51 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
     XLSX.writeFile(workbook, `HO_SO_CAN_RA_SOAT_${new Date().toISOString().slice(0, 10)}.xlsx`);
   }
 
+  async function downloadBatchWorkbook() {
+    if (!items.length) return;
+    const XLSX = await import("xlsx");
+    const rows = items.map((item, index) => ({
+      "STT": index + 1,
+      "Tệp nguồn": item.file.name,
+      "Tỉnh/thành phố mới": locationProfile.provinceNew,
+      "Tỉnh/thành phố cũ": locationProfile.provinceOld,
+      "Xã/phường mới": locationProfile.communeNew,
+      "Xã/phường cũ": locationProfile.communeOld,
+      "Thôn/bản/xóm mới": locationProfile.villageNew,
+      "Thôn/bản/xóm cũ": locationProfile.villageOld,
+      "Mã xã": item.fields.communeCode,
+      "Số tờ": item.fields.mapSheet,
+      "Số thửa": item.fields.parcel,
+      "Diện tích (m²)": item.fields.area,
+      "Nhóm hồ sơ": item.fields.prefix,
+      "Hậu tố": item.fields.suffix,
+      "Tên tệp đề xuất": suggestedNames[index],
+      "SHA-256": contentHashes[item.id] || "Chưa tính",
+      "Đối chiếu file tổng": comparison[index] === "matched" ? "Trùng khớp" : comparison[index] === "unmatched" ? "Không có trong file tổng" : comparison[index] === "missing" ? "Thiếu khóa" : "Chưa đối chiếu",
+      "Sheet tìm thấy": matchSources[index].join("; "),
+      "Trạng thái": item.status === "done" ? "Hoàn thành" : item.status === "review" ? "Cần rà soát" : item.status === "error" ? "Có lỗi" : item.status === "processing" ? "Đang xử lý" : "Chờ xử lý",
+      "Ghi chú": item.message,
+    }));
+    const summary = [
+      { "Chỉ tiêu": "Tổng số tệp", "Giá trị": items.length },
+      { "Chỉ tiêu": "Đã hoàn thành", "Giá trị": items.filter((item) => item.status === "done").length },
+      { "Chỉ tiêu": "Cần rà soát", "Giá trị": items.filter((item) => item.status === "review").length },
+      { "Chỉ tiêu": "Có lỗi", "Giá trị": items.filter((item) => item.status === "error").length },
+      { "Chỉ tiêu": "Trùng khớp file tổng", "Giá trị": matchedCount },
+      { "Chỉ tiêu": "Không có trong file tổng", "Giá trị": unmatchedCount },
+      { "Chỉ tiêu": "Tên tệp bị trùng", "Giá trị": duplicateNames.size },
+      { "Chỉ tiêu": "Thời điểm xuất", "Giá trị": new Date().toLocaleString("vi-VN") },
+    ];
+    const workbook = XLSX.utils.book_new();
+    const dataSheet = XLSX.utils.json_to_sheet(rows);
+    dataSheet["!cols"] = [{ wch: 7 }, { wch: 34 }, { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 11 }, { wch: 11 }, { wch: 11 }, { wch: 16 }, { wch: 18 }, { wch: 10 }, { wch: 48 }, { wch: 66 }, { wch: 24 }, { wch: 28 }, { wch: 16 }, { wch: 48 }];
+    const summarySheet = XLSX.utils.json_to_sheet(summary);
+    summarySheet["!cols"] = [{ wch: 30 }, { wch: 24 }];
+    XLSX.utils.book_append_sheet(workbook, dataSheet, "TONG_HOP_HO_SO");
+    XLSX.utils.book_append_sheet(workbook, summarySheet, "TONG_QUAN");
+    XLSX.writeFile(workbook, `TONG_HOP_HO_SO_DAT_DAI_${new Date().toISOString().slice(0, 10)}.xlsx`, { compression: true });
+  }
+
   async function downloadMasterDuplicates() {
     if (!master || !duplicateMasterCount) return;
     const duplicateRows = [...masterKeyCounts.entries()].filter(([, count]) => count > 1).map(([key, count]) => {
@@ -656,6 +755,7 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
         <div className="batch-summary"><strong>{items.length}</strong><span>Tệp đã chọn</span><strong>{readyCount}</strong><span>Sẵn sàng tải</span></div>
       </div>
       <div className="batch-toolbar">
+        <label className="batch-ocr-toggle"><input type="checkbox" checked={autoClassify} onChange={(event) => setAutoClassify(event.target.checked)} /><span><b>Tự phân loại tên tệp</b><small>Nhận COGCN/CHUACOGIAY và GT/TBXN/DDK</small></span></label>
         <label>Nhóm hồ sơ<select value={batchPrefix} onChange={(event) => setBatchPrefix(event.target.value as LandFields["prefix"])}><option value="CHUACOGIAY">Chưa có giấy</option><option value="COGCN">Có GCN</option></select></label>
         <label>Hậu tố<select value={batchSuffix} onChange={(event) => setBatchSuffix(event.target.value as LandFields["suffix"])}><option value="GT">GT</option><option value="TBXN">TBXN</option><option value="DDK">DDK</option></select></label>
         <label>Cách đóng gói<select value={archiveMode} onChange={(event) => setArchiveMode(event.target.value as "flat" | "folders")}><option value="folders">Chia thư mục tự động</option><option value="flat">Một thư mục</option></select></label>
@@ -663,7 +763,9 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
         <label className="batch-ocr-toggle"><input type="checkbox" checked={batchOcr} onChange={(event) => setBatchOcr(event.target.checked)} /><span><b>OCR PDF scan</b><small>Tối đa 5 PDF/lượt; xử lý lâu hơn</small></span></label>
         <button type="button" className="secondary-action" onClick={applyDefaults} disabled={!items.length}>Áp dụng cho tất cả</button>
         <input ref={inputRef} type="file" accept={ACCEPTED} multiple onChange={(event) => addFiles(event.target.files)} aria-label="Chọn nhiều tệp hồ sơ" />
+        <input ref={folderInputRef} type="file" accept={ACCEPTED} multiple {...({ webkitdirectory: "", directory: "" } as Record<string, string>)} onChange={(event) => addFiles(event.target.files)} aria-label="Chọn thư mục hồ sơ" />
         <button type="button" className="batch-add" onClick={() => inputRef.current?.click()}>+ Chọn nhiều tệp</button>
+        <button type="button" className="batch-add folder-add" onClick={() => folderInputRef.current?.click()}>+ Chọn cả thư mục</button>
       </div>
 
       {archiveMode === "folders" && <div className="folder-preview" aria-label="Cấu trúc thư mục ZIP"><span>ZIP sẽ được sắp xếp:</span><code>{safeBaseName(archiveRoot.trim() || "HO_SO_DAT_DAI")} / COGCN hoặc CHUACOGIAY / GT, TBXN hoặc DDK / tệp</code></div>}
@@ -689,7 +791,7 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
       </div>}
 
       {!items.length ? (
-        <button type="button" className="batch-empty" onClick={() => inputRef.current?.click()}><span aria-hidden="true">＋</span><strong>Chọn nhiều Word, PDF hoặc Excel</strong><small>Hệ thống sẽ xử lý lần lượt và không ghi đè tệp gốc.</small></button>
+        <button type="button" className="batch-empty" onClick={() => inputRef.current?.click()} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); addFiles(event.dataTransfer.files); }}><span aria-hidden="true">＋</span><strong>Chọn hoặc kéo thả nhiều Word, PDF, Excel</strong><small>Có thể chọn cả thư mục; hệ thống xử lý lần lượt và không ghi đè tệp gốc.</small></button>
       ) : !visibleItems.length ? (
         <div className="batch-no-results"><strong>Không tìm thấy hồ sơ phù hợp</strong><button type="button" onClick={() => { setBatchSearch(""); setComparisonFilter("all"); }}>Xóa bộ lọc</button></div>
       ) : (
@@ -700,7 +802,7 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
               const suggested = suggestedNames[index];
               const duplicate = Boolean(suggested && duplicateNames.has(suggested.toLocaleLowerCase()));
               return <tr key={item.id} className={duplicate ? "duplicate-row" : ""}>
-                <td><strong>{item.file.name}</strong><small>{formatBytes(item.file.size)}</small></td>
+                <td><strong>{item.file.name}</strong><small>{formatBytes(item.file.size)}</small>{contentHashes[item.id] && <small className="file-hash" title={contentHashes[item.id]}>SHA-256: {contentHashes[item.id].slice(0, 12)}…</small>}{contentDuplicateIds.has(item.id) && <b className="duplicate-note">Trùng nội dung</b>}</td>
                 <td><input value={item.fields.communeCode} aria-label={`Mã xã của ${item.file.name}`} maxLength={5} onChange={(event) => updateItem(item.id, { fields: { communeCode: event.target.value.replace(/\D/g, "").slice(0, 5) } })} /></td>
                 <td><input value={item.fields.mapSheet} aria-label={`Số tờ của ${item.file.name}`} maxLength={6} onChange={(event) => updateItem(item.id, { fields: { mapSheet: event.target.value.replace(/\D/g, "").slice(0, 6) } })} /></td>
                 <td><input value={item.fields.parcel} aria-label={`Số thửa của ${item.file.name}`} maxLength={7} onChange={(event) => updateItem(item.id, { fields: { parcel: event.target.value.replace(/\D/g, "").slice(0, 7) } })} /></td>
@@ -716,18 +818,25 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
 
       <div className="batch-actions">
         <button type="button" className="button button-primary" onClick={processAll} disabled={!items.length || running}>{running ? "Đang xử lý…" : "Bắt đầu nhận diện"}<span aria-hidden="true">→</span></button>
+        {running && <button type="button" className="button batch-stop" onClick={() => { stopRequestedRef.current = true; setBatchProgress((current) => ({ ...current, label: "Sẽ dừng sau tệp hiện tại…" })); }}>Dừng an toàn</button>}
+        <button type="button" className="button report-download" onClick={() => void downloadBatchWorkbook()} disabled={!items.length || running}>Xuất Excel tổng hợp <span aria-hidden="true">↓</span></button>
+        <button type="button" className="button report-download" onClick={() => void scanContentDuplicates()} disabled={!items.length || running}>Kiểm tra tệp trùng</button>
+        {contentDuplicateIds.size > 0 && <button type="button" className="button batch-stop" onClick={removeContentDuplicates} disabled={running}>Bỏ {contentDuplicateIds.size} bản trùng</button>}
         <button type="button" className="button batch-download" onClick={downloadZip} disabled={!readyCount || running}>Tải {readyCount} tệp dạng ZIP <span aria-hidden="true">↓</span></button>
         <button type="button" className="button report-download" onClick={downloadComparisonReport} disabled={!master || !items.length}>Tải báo cáo CSV <span aria-hidden="true">↓</span></button>
         <button type="button" className="button report-download" onClick={() => void downloadReviewWorkbook()} disabled={!master || (!unmatchedCount && !comparison.includes("missing"))}>Xuất hồ sơ cần rà soát (.xlsx) <span aria-hidden="true">↓</span></button>
         <button type="button" className="button report-download" onClick={() => void downloadMasterDuplicates()} disabled={!master || !duplicateMasterCount}>Xuất {duplicateMasterCount} khóa trùng (.xlsx) <span aria-hidden="true">↓</span></button>
+        <button type="button" className="button report-download" onClick={() => { setItems([]); setBatchProgress({ current: 0, total: 0, label: "" }); }} disabled={!items.length || running}>Xóa danh sách</button>
         {duplicateNames.size > 0 && <p><span aria-hidden="true">!</span>Có {duplicateNames.size} tên bị trùng. Hãy sửa mã xã, số tờ hoặc số thửa trước khi tải.</p>}
       </div>
+      {batchProgress.total > 0 && <div className="batch-progress" aria-live="polite"><div><strong>{batchProgress.label}</strong><span>{batchProgress.current}/{batchProgress.total} tệp · {Math.round((batchProgress.current / Math.max(1, batchProgress.total)) * 100)}%</span></div><i><b style={{ width: `${(batchProgress.current / Math.max(1, batchProgress.total)) * 100}%` }} /></i></div>}
     </section>
   );
 }
 
 export default function FileProcessor() {
   const inputRef = useRef<HTMLInputElement>(null);
+  const locationImportRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [result, setResult] = useState<ProcessedResult | null>(null);
   const [status, setStatus] = useState<"idle" | "processing" | "done" | "error">("idle");
@@ -767,6 +876,31 @@ export default function FileProcessor() {
       localStorage.setItem("sy-land-processing-history", JSON.stringify(next));
       return next;
     });
+  }
+
+  function exportLocationProfile() {
+    const blob = new Blob([JSON.stringify({ product: "SY LAND", version: 1, location: locationProfile }, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `CAU_HINH_DIA_BAN_${locationProfile.communeCode || "SY_LAND"}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function importLocationProfile(file?: File) {
+    if (!file || file.size > 1024 * 1024) return;
+    try {
+      const parsed = JSON.parse(await file.text());
+      const source = parsed?.location || parsed;
+      const next = { ...EMPTY_LOCATION, ...source, communeCode: normalizeCommuneCode(String(source?.communeCode || "")) };
+      setLocationProfile(next);
+    } catch {
+      setError("Không đọc được cấu hình địa bàn. Hãy chọn đúng tệp JSON đã xuất từ SỸ LAND.");
+      setStatus("error");
+    } finally {
+      if (locationImportRef.current) locationImportRef.current.value = "";
+    }
   }
 
   const suggestedFileName = useMemo(() => {
@@ -954,7 +1088,7 @@ export default function FileProcessor() {
           <label>Thôn/bản/xóm hiện nay<input value={locationProfile.villageNew} placeholder="Tên hiện nay" onChange={(event) => setLocationProfile((current) => ({ ...current, villageNew: event.target.value }))} /></label>
           <label>Thôn/bản/xóm trước sắp xếp<input value={locationProfile.villageOld} placeholder="Tên cũ" onChange={(event) => setLocationProfile((current) => ({ ...current, villageOld: event.target.value }))} /></label>
           <label className="location-aliases">Tên gọi khác, địa danh liên quan<textarea value={locationProfile.aliases} placeholder="Nhập nhiều tên, cách nhau bằng dấu phẩy; ví dụ: Khu 1, Nà Duồng, tên viết tắt…" onChange={(event) => setLocationProfile((current) => ({ ...current, aliases: event.target.value }))} /></label>
-          <div className="location-actions"><p><span aria-hidden="true">✓</span>Cấu hình được lưu cục bộ trên thiết bị và áp dụng cho cả xử lý một tệp, hàng loạt và đối chiếu.</p><button type="button" onClick={() => setLocationProfile(EMPTY_LOCATION)}>Xóa cấu hình</button></div>
+          <div className="location-actions"><p><span aria-hidden="true">✓</span>Cấu hình được lưu cục bộ trên thiết bị và áp dụng cho cả xử lý một tệp, hàng loạt và đối chiếu.</p><input ref={locationImportRef} type="file" accept="application/json,.json" onChange={(event) => void importLocationProfile(event.target.files?.[0])} aria-label="Nhập cấu hình địa bàn" /><button type="button" onClick={exportLocationProfile}>Xuất cấu hình</button><button type="button" onClick={() => locationImportRef.current?.click()}>Nhập cấu hình</button><button type="button" onClick={() => setLocationProfile(EMPTY_LOCATION)}>Xóa cấu hình</button></div>
         </div>
       </details>
       <div className="privacy-strip">
