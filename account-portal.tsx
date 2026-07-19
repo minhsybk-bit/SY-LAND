@@ -12,21 +12,38 @@ const BUG_KEY = "sy-land-bug-reports";
 const LICENSE_KEY = "sy-land-test-licenses";
 const ACTIVATION_KEY = "sy-land-test-activations";
 const REMOTE_SESSION_KEY = "sy-land-auth-session";
-const SUPABASE_URL = String(import.meta.env.VITE_SUPABASE_URL || "").replace(/\/$/, "");
+const SUPABASE_URL = String(import.meta.env.VITE_SUPABASE_URL || "").trim().replace(/\/$/, "");
 const SUPABASE_ANON_KEY = String(import.meta.env.VITE_SUPABASE_ANON_KEY || "");
-const REMOTE_AUTH = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
+const AUTH_INPUT_PRESENT = Boolean(SUPABASE_URL || SUPABASE_ANON_KEY);
+const SUPABASE_URL_VALID = /^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(SUPABASE_URL);
+const AUTH_CONFIG_ERROR = AUTH_INPUT_PRESENT && (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_URL_VALID);
+const REMOTE_AUTH = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY && SUPABASE_URL_VALID);
 
 function bytesToHex(bytes: Uint8Array) { return Array.from(bytes).map((value) => value.toString(16).padStart(2, "0")).join(""); }
 function randomSalt() { const bytes = crypto.getRandomValues(new Uint8Array(16)); return bytesToHex(bytes); }
 async function hashPassword(password: string, salt: string) { return bytesToHex(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${salt}:${password}`)))); }
 function downloadJson(data: unknown, name: string) { const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" })); const anchor = document.createElement("a"); anchor.href = url; anchor.download = name; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
 function generateLicenseCode() { const bytes = crypto.getRandomValues(new Uint8Array(10)); const value = Array.from(bytes).map((item) => (item % 36).toString(36).toUpperCase()).join(""); return `SYL-${value.slice(0, 5)}-${value.slice(5)}`; }
-async function remoteAuth(path: string, payload: Record<string, unknown>) { const response = await fetch(`${SUPABASE_URL}/auth/v1${path}`, { method: "POST", headers: { apikey: SUPABASE_ANON_KEY, "Content-Type": "application/json" }, body: JSON.stringify(payload) }); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.msg || data.message || data.error_description || "Yêu cầu xác thực thất bại."); return data; }
+async function remoteAuth(path: string, payload: Record<string, unknown>, options: { method?: "POST" | "PUT"; accessToken?: string } = {}) {
+  if (!REMOTE_AUTH) throw new Error("Máy chủ tài khoản chưa được cấu hình đúng.");
+  const response = await fetch(`${SUPABASE_URL}/auth/v1${path}`, {
+    method: options.method || "POST",
+    headers: { apikey: SUPABASE_ANON_KEY, "Content-Type": "application/json", ...(options.accessToken ? { Authorization: `Bearer ${options.accessToken}` } : {}) },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.msg || data.message || data.error_description || "Yêu cầu xác thực thất bại.");
+  return data;
+}
+
+function accountFromRemoteUser(user: any): Account {
+  return { id: user.id, name: user.user_metadata?.full_name || user.email?.split("@")[0] || "Người dùng SỸ LAND", email: user.email || "", passwordHash: "", salt: "", role: user.app_metadata?.role === "admin" ? "admin" : "user", createdAt: user.created_at || new Date().toISOString() };
+}
 
 export default function AccountPortal() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [sessionId, setSessionId] = useState("");
-  const [mode, setMode] = useState<"login" | "register" | "setup">("login");
+  const [mode, setMode] = useState<"login" | "register" | "setup" | "forgot" | "reset">("login");
   const [name, setName] = useState("Nguyễn Minh Sỹ");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -47,7 +64,8 @@ export default function AccountPortal() {
   }, [current, activations, licenses]);
 
   useEffect(() => {
-    try {
+    async function restoreSession() {
+      try {
       const storedAccounts = JSON.parse(localStorage.getItem(ACCOUNT_KEY) || "[]") as Account[];
       const remoteSession = JSON.parse(localStorage.getItem(REMOTE_SESSION_KEY) || "null");
       const remoteAccount = remoteSession?.account as Account | undefined;
@@ -55,9 +73,34 @@ export default function AccountPortal() {
       setReports(JSON.parse(localStorage.getItem(BUG_KEY) || "[]"));
       setLicenses(JSON.parse(localStorage.getItem(LICENSE_KEY) || "[]"));
       setActivations(JSON.parse(localStorage.getItem(ACTIVATION_KEY) || "{}"));
-      setSessionId(remoteAccount?.id || localStorage.getItem(SESSION_KEY) || "");
+      setSessionId(REMOTE_AUTH ? "" : remoteAccount?.id || localStorage.getItem(SESSION_KEY) || "");
       setMode(REMOTE_AUTH ? "login" : storedAccounts.some((account) => account.role === "admin") ? "login" : "setup");
-    } catch { setMode("setup"); }
+      if (REMOTE_AUTH) {
+        const hash = new URLSearchParams(location.hash.replace(/^#/, ""));
+        const recoveryToken = hash.get("access_token");
+        if (hash.get("type") === "recovery" && recoveryToken) {
+          localStorage.setItem(REMOTE_SESSION_KEY, JSON.stringify({ accessToken: recoveryToken, refreshToken: hash.get("refresh_token") || "", account: remoteAccount || null }));
+          history.replaceState(null, "", location.pathname + location.search);
+          setMode("reset");
+          setMessage("Hãy đặt mật khẩu mới cho tài khoản.");
+          return;
+        }
+        if (remoteSession?.refreshToken) {
+          try {
+            const data = await remoteAuth("/token?grant_type=refresh_token", { refresh_token: remoteSession.refreshToken });
+            const account = accountFromRemoteUser(data.user);
+            localStorage.setItem(REMOTE_SESSION_KEY, JSON.stringify({ accessToken: data.access_token, refreshToken: data.refresh_token, account }));
+            setAccounts((items) => [...items.filter((item) => item.id !== account.id), account]);
+            setSessionId(account.id);
+          } catch {
+            localStorage.removeItem(REMOTE_SESSION_KEY);
+            setMessage("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
+          }
+        }
+      }
+      } catch { setMode(REMOTE_AUTH ? "login" : "setup"); }
+    }
+    void restoreSession();
   }, []);
 
   function saveAccounts(next: Account[]) { setAccounts(next); localStorage.setItem(ACCOUNT_KEY, JSON.stringify(next)); }
@@ -65,13 +108,32 @@ export default function AccountPortal() {
   async function submitAccount(event: FormEvent) {
     event.preventDefault(); setMessage("");
     const normalizedEmail = email.trim().toLocaleLowerCase();
+    if (AUTH_CONFIG_ERROR) { setMessage("Cấu hình tài khoản chưa đúng. Project URL phải có dạng https://xxxxx.supabase.co và cần đủ anon key."); return; }
+    if (mode === "forgot" && REMOTE_AUTH) {
+      if (!normalizedEmail) { setMessage("Hãy nhập email đã đăng ký."); return; }
+      try {
+        await remoteAuth("/recover", { email: normalizedEmail, redirect_to: `${location.origin}${location.pathname}#tai-khoan` });
+        setMessage("Nếu email tồn tại, hướng dẫn đặt lại mật khẩu đã được gửi. Hãy kiểm tra cả thư rác.");
+      } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Không gửi được email khôi phục."); }
+      return;
+    }
+    if (mode === "reset" && REMOTE_AUTH) {
+      if (password.length < 8) { setMessage("Mật khẩu cần ít nhất 8 ký tự."); return; }
+      if (password !== confirm) { setMessage("Mật khẩu xác nhận chưa khớp."); return; }
+      try {
+        const stored = JSON.parse(localStorage.getItem(REMOTE_SESSION_KEY) || "null");
+        if (!stored?.accessToken) throw new Error("Liên kết khôi phục đã hết hạn. Hãy yêu cầu lại email đặt mật khẩu.");
+        await remoteAuth("/user", { password }, { method: "PUT", accessToken: stored.accessToken });
+        localStorage.removeItem(REMOTE_SESSION_KEY); setPassword(""); setConfirm(""); setMode("login"); setMessage("Đã đổi mật khẩu. Bạn có thể đăng nhập lại.");
+      } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Không đổi được mật khẩu."); }
+      return;
+    }
     if (!normalizedEmail || !password) { setMessage("Hãy nhập email và mật khẩu."); return; }
     if (REMOTE_AUTH) {
       try {
         if (mode === "login") {
           const data = await remoteAuth("/token?grant_type=password", { email: normalizedEmail, password });
-          const user = data.user;
-          const account: Account = { id: user.id, name: user.user_metadata?.full_name || normalizedEmail.split("@")[0], email: user.email, passwordHash: "", salt: "", role: user.app_metadata?.role === "admin" ? "admin" : "user", createdAt: user.created_at || new Date().toISOString() };
+          const account = accountFromRemoteUser(data.user);
           localStorage.setItem(REMOTE_SESSION_KEY, JSON.stringify({ accessToken: data.access_token, refreshToken: data.refresh_token, account }));
           setAccounts((current) => [...current.filter((item) => item.id !== account.id), account]); setSessionId(account.id); setPassword(""); setMessage("Đăng nhập tài khoản dùng chung thành công."); return;
         }
@@ -154,8 +216,8 @@ export default function AccountPortal() {
 
   return (
     <section className="account-portal account-auth" id="tai-khoan" aria-labelledby="account-title">
-      <div className="auth-copy"><p className="section-kicker">{REMOTE_AUTH ? "Tài khoản dùng chung" : "Tài khoản kiểm thử"}</p><h2 id="account-title">{mode === "setup" ? "Thiết lập quản trị viên SỸ LAND" : mode === "register" ? "Đăng ký tài khoản dùng thử" : "Đăng nhập SỸ LAND"}</h2><p>{REMOTE_AUTH ? "Tài khoản này dùng chung cho website và phần mềm SỸ LAND." : mode === "setup" ? "Thiết lập mật khẩu quản trị lần đầu cho anh Nguyễn Minh Sỹ trên thiết bị này." : "Chưa cấu hình máy chủ xác thực; tài khoản chỉ lưu trên thiết bị."}</p><ul><li>✓ Mật khẩu không được ghi trong mã website</li><li>✓ {REMOTE_AUTH ? "Xác thực tập trung qua kết nối HTTPS" : "Chỉ lưu mã băm trên trình duyệt"}</li><li>✓ Admin có khu vực ghi nhận và xuất báo cáo lỗi</li></ul></div>
-      <form className="auth-form" onSubmit={submitAccount}>{mode !== "login" && <label>Họ và tên<input value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" /></label>}<label>Email<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" placeholder="Nhập email quản trị" /></label><label>Mật khẩu<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} placeholder="Tối thiểu 8 ký tự" /></label>{mode !== "login" && <label>Xác nhận mật khẩu<input type="password" value={confirm} onChange={(event) => setConfirm(event.target.value)} autoComplete="new-password" /></label>}<button type="submit">{mode === "setup" ? "Tạo tài khoản admin" : mode === "register" ? "Đăng ký" : "Đăng nhập"}</button>{message && <p className="account-message">{message}</p>}{mode !== "setup" && <p className="auth-switch">{mode === "login" ? <>Chưa có tài khoản? <button type="button" onClick={() => { setMode("register"); setMessage(""); }}>Đăng ký dùng thử</button></> : <>Đã có tài khoản? <button type="button" onClick={() => { setMode("login"); setMessage(""); }}>Đăng nhập</button></>}</p>}</form>
+      <div className="auth-copy"><p className="section-kicker">{REMOTE_AUTH ? "Tài khoản dùng chung" : "Tài khoản kiểm thử"}</p><h2 id="account-title">{mode === "setup" ? "Thiết lập quản trị viên SỸ LAND" : mode === "register" ? "Đăng ký tài khoản dùng thử" : mode === "forgot" ? "Khôi phục mật khẩu" : mode === "reset" ? "Đặt mật khẩu mới" : "Đăng nhập SỸ LAND"}</h2><p>{AUTH_CONFIG_ERROR ? "Máy chủ tài khoản đang cấu hình sai nên đăng nhập cục bộ đã được khóa để tránh tách dữ liệu." : REMOTE_AUTH ? "Tài khoản này dùng chung cho website và phần mềm SỸ LAND." : mode === "setup" ? "Thiết lập mật khẩu quản trị lần đầu cho anh Nguyễn Minh Sỹ trên thiết bị này." : "Chưa cấu hình máy chủ xác thực; tài khoản chỉ lưu trên thiết bị."}</p><ul><li>✓ Mật khẩu không được ghi trong mã website</li><li>✓ {REMOTE_AUTH ? "Tự khôi phục phiên đăng nhập qua HTTPS" : "Chỉ lưu mã băm trên trình duyệt"}</li><li>✓ Có quy trình quên và đặt lại mật khẩu</li></ul></div>
+      <form className="auth-form" onSubmit={submitAccount}>{(mode === "register" || mode === "setup") && <label>Họ và tên<input value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" /></label>}{mode !== "reset" && <label>Email<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" placeholder="Nhập email đã đăng ký" /></label>}{mode !== "forgot" && <label>Mật khẩu<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} placeholder="Tối thiểu 8 ký tự" /></label>}{mode !== "login" && mode !== "forgot" && <label>Xác nhận mật khẩu<input type="password" value={confirm} onChange={(event) => setConfirm(event.target.value)} autoComplete="new-password" /></label>}<button type="submit" disabled={AUTH_CONFIG_ERROR}>{mode === "setup" ? "Tạo tài khoản admin" : mode === "register" ? "Đăng ký" : mode === "forgot" ? "Gửi email khôi phục" : mode === "reset" ? "Lưu mật khẩu mới" : "Đăng nhập"}</button>{message && <p className="account-message">{message}</p>}{mode === "login" && REMOTE_AUTH && <button className="auth-secondary" type="button" onClick={() => { setMode("forgot"); setMessage(""); }}>Quên mật khẩu?</button>}{mode !== "setup" && mode !== "reset" && <p className="auth-switch">{mode === "login" ? <>Chưa có tài khoản? <button type="button" onClick={() => { setMode("register"); setMessage(""); }}>Đăng ký dùng thử</button></> : <>Đã có tài khoản? <button type="button" onClick={() => { setMode("login"); setMessage(""); }}>Đăng nhập</button></>}</p>}</form>
     </section>
   );
 }
