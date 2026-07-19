@@ -36,6 +36,22 @@ async function remoteAuth(path: string, payload: Record<string, unknown>, option
   return data;
 }
 
+async function remoteData(path: string, accessToken: string, options: { method?: "GET" | "POST" | "PATCH"; payload?: unknown } = {}) {
+  const response = await fetch(`${SUPABASE_URL}/rest/v1${path}`, {
+    method: options.method || "GET",
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+      Prefer: "return=representation",
+    },
+    ...(options.payload === undefined ? {} : { body: JSON.stringify(options.payload) }),
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(data?.message || data?.hint || "Không đồng bộ được dữ liệu tài khoản.");
+  return data;
+}
+
 function accountFromRemoteUser(user: any): Account {
   return { id: user.id, name: user.user_metadata?.full_name || user.email?.split("@")[0] || "Người dùng SỸ LAND", email: user.email || "", passwordHash: "", salt: "", role: user.app_metadata?.role === "admin" ? "admin" : "user", createdAt: user.created_at || new Date().toISOString() };
 }
@@ -43,6 +59,7 @@ function accountFromRemoteUser(user: any): Account {
 export default function AccountPortal() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [sessionId, setSessionId] = useState("");
+  const [remoteToken, setRemoteToken] = useState("");
   const [mode, setMode] = useState<"login" | "register" | "setup" | "forgot" | "reset">("login");
   const [name, setName] = useState("Nguyễn Minh Sỹ");
   const [email, setEmail] = useState("");
@@ -58,10 +75,26 @@ export default function AccountPortal() {
   const current = useMemo(() => accounts.find((account) => account.id === sessionId) || null, [accounts, sessionId]);
   const activeLicense = useMemo(() => {
     if (!current) return null;
+    if (REMOTE_AUTH) return licenses.find((item) => item.email === current.email && item.status === "Hoạt động" && new Date(item.expiresAt) >= new Date()) || null;
     const code = activations[current.id];
     const license = licenses.find((item) => item.code === code);
     return license && license.status === "Hoạt động" && new Date(license.expiresAt) >= new Date() ? license : null;
   }, [current, activations, licenses]);
+
+  async function hydrateRemoteAccount(user: any, accessToken: string) {
+    let account = accountFromRemoteUser(user);
+    try {
+      const profiles = await remoteData(`/profiles?id=eq.${encodeURIComponent(user.id)}&select=id,full_name,email,role,created_at`, accessToken);
+      const profile = Array.isArray(profiles) ? profiles[0] : null;
+      if (profile) account = { ...account, name: profile.full_name || account.name, email: profile.email || account.email, role: profile.role === "admin" ? "admin" : "user", createdAt: profile.created_at || account.createdAt };
+      const rows = await remoteData(`/licenses?select=id,code,customer,email,plan,expires_at,status,created_at&order=created_at.desc`, accessToken);
+      if (Array.isArray(rows)) setLicenses(rows.map((item: any) => ({ id: item.id, code: item.code, customer: item.customer, email: item.email, plan: item.plan, expiresAt: item.expires_at, status: item.status, createdAt: item.created_at })));
+    } catch (reason) {
+      setMessage(reason instanceof Error ? `${reason.message} Hãy chạy tệp SUPABASE_SCHEMA.sql.` : "Chưa đồng bộ được hồ sơ máy chủ.");
+    }
+    setRemoteToken(accessToken);
+    return account;
+  }
 
   useEffect(() => {
     async function restoreSession() {
@@ -88,7 +121,7 @@ export default function AccountPortal() {
         if (remoteSession?.refreshToken) {
           try {
             const data = await remoteAuth("/token?grant_type=refresh_token", { refresh_token: remoteSession.refreshToken });
-            const account = accountFromRemoteUser(data.user);
+            const account = await hydrateRemoteAccount(data.user, data.access_token);
             localStorage.setItem(REMOTE_SESSION_KEY, JSON.stringify({ accessToken: data.access_token, refreshToken: data.refresh_token, account }));
             setAccounts((items) => [...items.filter((item) => item.id !== account.id), account]);
             setSessionId(account.id);
@@ -133,7 +166,7 @@ export default function AccountPortal() {
       try {
         if (mode === "login") {
           const data = await remoteAuth("/token?grant_type=password", { email: normalizedEmail, password });
-          const account = accountFromRemoteUser(data.user);
+          const account = await hydrateRemoteAccount(data.user, data.access_token);
           localStorage.setItem(REMOTE_SESSION_KEY, JSON.stringify({ accessToken: data.access_token, refreshToken: data.refresh_token, account }));
           setAccounts((current) => [...current.filter((item) => item.id !== account.id), account]); setSessionId(account.id); setPassword(""); setMessage("Đăng nhập tài khoản dùng chung thành công."); return;
         }
@@ -158,7 +191,7 @@ export default function AccountPortal() {
     const next = [...accounts, account]; saveAccounts(next); localStorage.setItem(SESSION_KEY, account.id); setSessionId(account.id); setPassword(""); setConfirm(""); setMessage(role === "admin" ? "Đã tạo tài khoản quản trị cục bộ." : "Đăng ký thành công.");
   }
 
-  function logout() { localStorage.removeItem(SESSION_KEY); localStorage.removeItem(REMOTE_SESSION_KEY); setSessionId(""); setMode("login"); setMessage(""); }
+  function logout() { localStorage.removeItem(SESSION_KEY); localStorage.removeItem(REMOTE_SESSION_KEY); setRemoteToken(""); setSessionId(""); setMode("login"); setMessage(""); }
 
   function saveReport(event: FormEvent) {
     event.preventDefault();
@@ -169,18 +202,34 @@ export default function AccountPortal() {
 
   function updateReport(id: string, status: BugReport["status"]) { const next = reports.map((item) => item.id === id ? { ...item, status } : item); setReports(next); localStorage.setItem(BUG_KEY, JSON.stringify(next)); }
 
-  function createLicense(event: FormEvent) {
+  async function createLicense(event: FormEvent) {
     event.preventDefault();
     if (!licenseDraft.customer.trim() || !/^\S+@\S+\.\S+$/.test(licenseDraft.email.trim())) { setMessage("Hãy nhập tên khách hàng và email hợp lệ."); return; }
     const expires = new Date();
     expires.setMonth(expires.getMonth() + Math.max(1, Math.min(36, licenseDraft.months)));
     const item: License = { id: crypto.randomUUID(), code: generateLicenseCode(), customer: licenseDraft.customer.trim(), email: licenseDraft.email.trim().toLocaleLowerCase(), plan: licenseDraft.plan, expiresAt: expires.toISOString(), status: "Hoạt động", createdAt: new Date().toISOString() };
+    if (REMOTE_AUTH) {
+      if (!remoteToken || current?.role !== "admin") { setMessage("Chỉ quản trị viên máy chủ được cấp bản quyền."); return; }
+      try {
+        const rows = await remoteData("/licenses", remoteToken, { method: "POST", payload: { code: item.code, customer: item.customer, email: item.email, plan: item.plan, expires_at: item.expiresAt, status: item.status } });
+        const saved = Array.isArray(rows) ? rows[0] : null;
+        const remoteItem = saved ? { ...item, id: saved.id, createdAt: saved.created_at || item.createdAt } : item;
+        setLicenses((values) => [remoteItem, ...values]); setLicenseDraft({ customer: "", email: "", plan: "Cá nhân", months: 12 }); setMessage("Đã cấp bản quyền trên máy chủ."); return;
+      } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Không tạo được bản quyền."); return; }
+    }
     const next = [item, ...licenses];
     setLicenses(next); localStorage.setItem(LICENSE_KEY, JSON.stringify(next));
     setLicenseDraft({ customer: "", email: "", plan: "Cá nhân", months: 12 }); setMessage("Đã tạo mã bản quyền kiểm thử.");
   }
 
-  function toggleLicense(id: string) {
+  async function toggleLicense(id: string) {
+    if (REMOTE_AUTH) {
+      const selected = licenses.find((item) => item.id === id);
+      if (!selected || !remoteToken || current?.role !== "admin") return;
+      const status: License["status"] = selected.status === "Hoạt động" ? "Đã khóa" : "Hoạt động";
+      try { await remoteData(`/licenses?id=eq.${encodeURIComponent(id)}`, remoteToken, { method: "PATCH", payload: { status } }); setLicenses((items) => items.map((item) => item.id === id ? { ...item, status } : item)); setMessage("Đã cập nhật trạng thái bản quyền."); } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Không cập nhật được bản quyền."); }
+      return;
+    }
     const next = licenses.map((item) => item.id === id ? { ...item, status: item.status === "Hoạt động" ? "Đã khóa" as const : "Hoạt động" as const } : item);
     setLicenses(next); localStorage.setItem(LICENSE_KEY, JSON.stringify(next));
   }
