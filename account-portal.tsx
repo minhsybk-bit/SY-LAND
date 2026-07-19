@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { TERMS_VERSION } from "./legal-center";
 
 type Account = { id: string; name: string; email: string; passwordHash: string; salt: string; role: "admin" | "user"; createdAt: string };
 type BugReport = { id: string; title: string; area: string; severity: string; steps: string; expected: string; actual: string; createdAt: string; status: "Mới" | "Đang kiểm tra" | "Đã xử lý" };
@@ -69,6 +70,7 @@ export default function AccountPortal() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [message, setMessage] = useState("");
   const [reports, setReports] = useState<BugReport[]>([]);
   const [licenses, setLicenses] = useState<License[]>([]);
@@ -190,7 +192,8 @@ export default function AccountPortal() {
         }
         if (password.length < 8) { setMessage("Mật khẩu cần ít nhất 8 ký tự."); return; }
         if (password !== confirm) { setMessage("Mật khẩu xác nhận chưa khớp."); return; }
-        const data = await remoteAuth("/signup", { email: normalizedEmail, password, data: { full_name: name.trim() } });
+        if (!acceptedTerms) { setMessage("Hãy đồng ý Chính sách bảo mật và Điều khoản sử dụng."); return; }
+        const data = await remoteAuth("/signup", { email: normalizedEmail, password, data: { full_name: name.trim(), terms_version: TERMS_VERSION, terms_accepted_at: new Date().toISOString() } });
         setPassword(""); setConfirm(""); setMode("login");
         setMessage(data.access_token ? "Đăng ký thành công. Hãy đăng nhập." : "Đã đăng ký. Hãy kiểm tra email xác nhận rồi đăng nhập."); return;
       } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Không kết nối được máy chủ tài khoản."); return; }
@@ -202,6 +205,7 @@ export default function AccountPortal() {
     }
     if (password.length < 8) { setMessage("Mật khẩu cần ít nhất 8 ký tự."); return; }
     if (password !== confirm) { setMessage("Mật khẩu xác nhận chưa khớp."); return; }
+    if (!acceptedTerms) { setMessage("Hãy đồng ý Chính sách bảo mật và Điều khoản sử dụng."); return; }
     if (accounts.some((item) => item.email === normalizedEmail)) { setMessage("Email này đã được đăng ký trên thiết bị."); return; }
     const salt = randomSalt();
     const role: Account["role"] = mode === "setup" && !accounts.some((item) => item.role === "admin") ? "admin" : "user";
@@ -317,7 +321,7 @@ export default function AccountPortal() {
   return (
     <section className="account-portal account-auth" id="tai-khoan" aria-labelledby="account-title">
       <div className="auth-copy"><p className="section-kicker">{REMOTE_AUTH ? "Tài khoản SỸ LAND" : AUTH_CONFIG_ERROR ? "Cần hoàn tất cấu hình" : "Chế độ tài khoản cục bộ"}</p><h2 id="account-title">{mode === "setup" ? "Thiết lập quản trị viên SỸ LAND" : mode === "register" ? "Đăng ký tài khoản SỸ LAND" : mode === "forgot" ? "Khôi phục mật khẩu" : mode === "reset" ? "Đặt mật khẩu mới" : "Đăng nhập SỸ LAND"}</h2><p>{AUTH_CONFIG_ERROR ? "Website chưa nhận được cấu hình máy chủ tài khoản. Đăng ký và đăng nhập tạm khóa để tránh tạo tài khoản không đồng bộ." : REMOTE_AUTH ? "Một tài khoản đăng nhập được trên cả website và phần mềm SỸ LAND." : mode === "setup" ? "Thiết lập mật khẩu quản trị lần đầu cho anh Nguyễn Minh Sỹ trên thiết bị này." : "Chế độ phát triển cục bộ đang hoạt động."}</p><ul><li>✓ Mật khẩu không được ghi trong mã website</li><li>✓ {REMOTE_AUTH ? "Tự khôi phục phiên đăng nhập qua HTTPS" : AUTH_CONFIG_ERROR ? "Cần thêm hai GitHub Actions secrets" : "Chỉ lưu mã băm trên trình duyệt"}</li><li>✓ Có quy trình quên và đặt lại mật khẩu</li></ul></div>
-      <form className="auth-form" onSubmit={submitAccount}>{(mode === "register" || mode === "setup") && <label>Họ và tên<input value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" /></label>}{mode !== "reset" && <label>Email<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" placeholder="Nhập email đã đăng ký" /></label>}{mode !== "forgot" && <label>Mật khẩu<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} placeholder="Tối thiểu 8 ký tự" /></label>}{mode !== "login" && mode !== "forgot" && <label>Xác nhận mật khẩu<input type="password" value={confirm} onChange={(event) => setConfirm(event.target.value)} autoComplete="new-password" /></label>}<button type="submit" disabled={AUTH_CONFIG_ERROR}>{mode === "setup" ? "Tạo tài khoản admin" : mode === "register" ? "Tạo tài khoản" : mode === "forgot" ? "Gửi email khôi phục" : mode === "reset" ? "Lưu mật khẩu mới" : "Đăng nhập"}</button>{message && <p className="account-message">{message}</p>}{mode === "login" && REMOTE_AUTH && <button className="auth-secondary" type="button" onClick={() => { setMode("forgot"); setMessage(""); }}>Quên mật khẩu?</button>}{mode !== "setup" && mode !== "reset" && <p className="auth-switch">{mode === "login" ? <>Chưa có tài khoản? <button type="button" onClick={() => { setMode("register"); setMessage(""); }}>Đăng ký tài khoản</button></> : <>Đã có tài khoản? <button type="button" onClick={() => { setMode("login"); setMessage(""); }}>Đăng nhập</button></>}</p>}</form>
+      <form className="auth-form" onSubmit={submitAccount}>{(mode === "register" || mode === "setup") && <label>Họ và tên<input value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" /></label>}{mode !== "reset" && <label>Email<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" placeholder="Nhập email đã đăng ký" /></label>}{mode !== "forgot" && <label>Mật khẩu<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} placeholder="Tối thiểu 8 ký tự" /></label>}{mode !== "login" && mode !== "forgot" && <label>Xác nhận mật khẩu<input type="password" value={confirm} onChange={(event) => setConfirm(event.target.value)} autoComplete="new-password" /></label>}{(mode === "register" || mode === "setup") && <label className="terms-consent"><input type="checkbox" checked={acceptedTerms} onChange={(event) => setAcceptedTerms(event.target.checked)} /><span>Đồng ý <a href="#phap-ly">Chính sách bảo mật và Điều khoản sử dụng</a> phiên bản {TERMS_VERSION}.</span></label>}<button type="submit" disabled={AUTH_CONFIG_ERROR}>{mode === "setup" ? "Tạo tài khoản admin" : mode === "register" ? "Tạo tài khoản" : mode === "forgot" ? "Gửi email khôi phục" : mode === "reset" ? "Lưu mật khẩu mới" : "Đăng nhập"}</button>{message && <p className="account-message">{message}</p>}{mode === "login" && REMOTE_AUTH && <button className="auth-secondary" type="button" onClick={() => { setMode("forgot"); setMessage(""); }}>Quên mật khẩu?</button>}{mode !== "setup" && mode !== "reset" && <p className="auth-switch">{mode === "login" ? <>Chưa có tài khoản? <button type="button" onClick={() => { setMode("register"); setMessage(""); }}>Đăng ký tài khoản</button></> : <>Đã có tài khoản? <button type="button" onClick={() => { setMode("login"); setMessage(""); }}>Đăng nhập</button></>}</p>}</form>
     </section>
   );
 }

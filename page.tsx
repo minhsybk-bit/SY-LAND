@@ -7,6 +7,7 @@ import PdfToolkit from "./pdf-toolkit";
 import AccountPortal from "./account-portal";
 import SystemCheck from "./system-check";
 import SupportCenter from "./support-center";
+import LegalCenter from "./legal-center";
 
 const features = [
   {
@@ -257,6 +258,7 @@ export default function Home() {
           <SystemCheck />
           <AccountPortal />
           <SupportCenter />
+          <LegalCenter />
 
           <section className="pricing" id="goi-dich-vu" aria-labelledby="pricing-title">
             <div className="section-heading split-heading pricing-heading">
