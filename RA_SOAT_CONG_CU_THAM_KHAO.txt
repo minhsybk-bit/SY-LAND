@@ -1,0 +1,39 @@
+RÀ SOÁT CÔNG CỤ THAM KHẢO — SỸ LAND
+Cập nhật: 19/07/2026
+
+Nguồn người dùng cung cấp:
+- https://www.ilovepdf.com/vi/cat-pdf
+- https://smallpdf.com/vi/split-pdf
+- https://pdf.io/vi/split/
+- https://www.pdf2go.com/vi/split-pdf
+- https://www.canva.com/
+- https://www.adobe.com/vn_vi/
+
+Nguyên tắc triển khai:
+- Chỉ tham khảo phạm vi chức năng và nguyên tắc trải nghiệm phổ biến.
+- Không sao chép mã nguồn, câu chữ, hình ảnh, biểu tượng, bố cục, logo hoặc nhận diện thương hiệu.
+- Mọi chức năng được viết lại độc lập, dùng nhận diện và nhu cầu nghiệp vụ của SỸ LAND.
+
+ĐÃ CÓ TRÊN SỸ LAND
+- Tách theo khoảng; xuất trang nhập; chọn trực quan; tách tại mốc; chia đều; chẵn/lẻ; mỗi trang một tệp.
+- Nối PDF; xoay; sắp xếp; xóa trang; tìm và loại trang trùng.
+- Chuyển A3/khổ khác sang A4; cắt lề hiển thị.
+- PDF sang JPG/PNG; JPG/PNG sang PDF.
+- Đánh số trang; dấu bản quyền; tối ưu cấu trúc; nén ảnh ba mức.
+- OCR tiếng Việt; so sánh hai PDF; báo cáo CSV; làm sạch metadata.
+- Tìm kiếm và phân nhóm công cụ.
+
+NÊN PHÁT TRIỂN TIẾP
+- Chuyển ảnh HEIC/WebP sang PDF sau khi kiểm tra tương thích trình duyệt.
+- OCR tạo PDF có lớp chữ tìm kiếm thay vì chỉ xuất TXT.
+- Che thông tin nhạy cảm theo vùng với cơ chế xóa nội dung thật, không chỉ phủ hình.
+- Xử lý hàng loạt nhiều PDF trong một lượt và xuất nhật ký kết quả.
+- Mẫu bìa, phiếu và báo cáo mang nhận diện SỸ LAND do chính SỸ LAND thiết kế.
+
+KHÔNG NÊN GIẢ LẬP TRÊN WEBSITE TĨNH
+- Ký số bằng chứng thư số, xác thực chữ ký số hoặc đóng dấu thời gian tin cậy.
+- Mã hóa/đặt mật khẩu PDF nếu thư viện chưa hỗ trợ chuẩn và chưa được kiểm thử bảo mật.
+- Tuyên bố sửa chữa PDF hỏng trong mọi trường hợp.
+- Xóa dữ liệu mật bằng cách chỉ cắt lề hoặc phủ hình; nội dung ẩn có thể vẫn khôi phục được.
+
+Các chức năng thuộc nhóm bảo mật hoặc chữ ký số chỉ nên phát hành sau khi có máy chủ, kiểm thử an toàn và quy trình pháp lý phù hợp.
