@@ -43,7 +43,16 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
       - run: mv pages-dist/github-pages.html pages-dist/index.html
-      - run: cp public/favicon.svg pages-dist/favicon.svg
+      - name: Copy favicon
+        shell: bash
+        run: |
+          if [[ -f public/favicon.svg ]]; then
+            cp public/favicon.svg pages-dist/favicon.svg
+          elif [[ -f favicon.svg ]]; then
+            cp favicon.svg pages-dist/favicon.svg
+          else
+            echo "::warning::favicon.svg was not found; deploying without a custom favicon."
+          fi
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
