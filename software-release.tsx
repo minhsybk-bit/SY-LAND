@@ -6,11 +6,11 @@ type ReleaseAsset = { name: string; size: number; browser_download_url: string; 
 type GithubRelease = { tag_name: string; name: string; html_url: string; published_at: string; assets: ReleaseAsset[] };
 
 const FALLBACK: GithubRelease = {
-  tag_name: "v11.3.0",
-  name: "SỸ LAND 11.3.0",
-  html_url: "https://github.com/minhsybk-bit/SY-LAND/releases/tag/v11.3.0",
+  tag_name: "v11.5.0",
+  name: "SỸ LAND 11.5.0",
+  html_url: "https://github.com/minhsybk-bit/SY-LAND/releases/tag/v11.5.0",
   published_at: "2026-07-19T00:00:00Z",
-  assets: [{ name: "SYLAND_Setup_11.3.0.zip", size: 136297353, browser_download_url: "https://github.com/minhsybk-bit/SY-LAND/releases/download/v11.3.0/SYLAND_Setup_11.3.0.zip", digest: "sha256:3843cd8a67510865ac892d93fcfcc6d6e217338f6f0eaa1dad0169a84f05a41b" }],
+  assets: [{ name: "SYLAND_Setup_11.5.0.zip", size: 138122078, browser_download_url: "https://github.com/minhsybk-bit/SY-LAND/releases/download/v11.5.0/SYLAND_Setup_11.5.0.zip", digest: "sha256:7f97cd693f65b09f37970725b64c5a9a0c751210acbea3a579809030c89836cd" }],
 };
 
 export default function SoftwareRelease() {
