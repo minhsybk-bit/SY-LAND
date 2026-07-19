@@ -1,0 +1,19 @@
+SỸ LAND - CẬP NHẬT NHÃN TÀI KHOẢN 11.5.1
+=========================================
+
+Đã thay các nhãn cũ trong khu vực tài khoản:
+- “Đăng ký tài khoản dùng thử” thành “Đăng ký tài khoản SỸ LAND”.
+- “Đăng ký dùng thử” thành “Đăng ký tài khoản”.
+- “Tài khoản dùng thử đã sẵn sàng” thành “Tài khoản SỸ LAND đã sẵn sàng”.
+- Hiển thị rõ “Tài khoản máy chủ/Đã đồng bộ” hoặc “Chế độ cục bộ”.
+
+Tệp cần tải lên GitHub:
+- app/account-portal.tsx
+
+Sau khi tải tệp lên nhánh main, GitHub Actions sẽ build và triển khai lại web.
+Chờ biểu tượng chạy chuyển sang màu xanh rồi làm mới trang bằng Ctrl+F5.
+
+Lưu ý: nếu trang vẫn hiển thị “Chế độ tài khoản cục bộ”, hai GitHub secrets
+VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY chưa được truyền thành công vào
+bước build. Nhãn đăng ký vẫn là tài khoản SỸ LAND, nhưng đồng bộ web/phần mềm
+chỉ hoạt động khi hai secrets này đúng.
