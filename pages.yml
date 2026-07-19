@@ -23,6 +23,20 @@ jobs:
         with:
           node-version: 22
       - run: npm install
+      - name: Validate account server configuration
+        shell: bash
+        run: |
+          if [[ -z "$VITE_SUPABASE_URL" || -z "$VITE_SUPABASE_ANON_KEY" ]]; then
+            echo "::error::Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY repository secret."
+            exit 1
+          fi
+          if [[ ! "$VITE_SUPABASE_URL" =~ ^https://[a-zA-Z0-9-]+\.supabase\.co/?$ ]]; then
+            echo "::error::VITE_SUPABASE_URL must look like https://xxxxx.supabase.co"
+            exit 1
+          fi
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
       - name: Build website
         run: npm run build
         env:
