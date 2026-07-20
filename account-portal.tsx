@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { TERMS_VERSION } from "./legal-center";
 
 type Account = { id: string; name: string; email: string; passwordHash: string; salt: string; role: "admin" | "user"; createdAt: string };
@@ -82,6 +82,8 @@ export default function AccountPortal() {
   const [paymentNotices, setPaymentNotices] = useState<PaymentNotice[]>([]);
   const [licenseDraft, setLicenseDraft] = useState({ customer: "", email: "", plan: "Cá nhân" as License["plan"], months: 12, maxDevices: 1 });
   const [activationCode, setActivationCode] = useState("");
+  const configInputRef = useRef<HTMLInputElement>(null);
+  const [configMessage, setConfigMessage] = useState("");
   const [activations, setActivations] = useState<Record<string, string>>({});
   const [report, setReport] = useState({ title: "", area: "Xử lý PDF", severity: "Trung bình", steps: "", expected: "", actual: "" });
   const current = useMemo(() => accounts.find((account) => account.id === sessionId) || null, [accounts, sessionId]);
@@ -337,6 +339,39 @@ export default function AccountPortal() {
     setActivationCode(code); setMessage("Đã tự điền mã. Nhấn Kích hoạt mã để hoàn tất.");
   }
 
+  function exportConfiguration() {
+    let locationProfile: unknown = null;
+    try { locationProfile = JSON.parse(localStorage.getItem("sy-land-location-profile") || "null"); } catch { /* Bỏ qua cấu hình cũ bị lỗi. */ }
+    const configuration = {
+      format: "syland-config",
+      schema_version: 1,
+      product: "Tiện ích hỗ trợ làm sạch CSDL đất đai SỸ LAND",
+      source: "website",
+      exported_at: new Date().toISOString(),
+      user: current ? { name: current.name, email: current.email } : null,
+      settings: { location_profile: locationProfile },
+      security: { contains_password: false, contains_session_token: false, contains_license_code: false },
+    };
+    downloadJson(configuration, `SYLAND_CAU_HINH_${new Date().toISOString().slice(0, 10)}.json`);
+    setConfigMessage("Đã xuất cấu hình tương thích. Tệp không chứa mật khẩu, phiên đăng nhập hoặc mã bản quyền.");
+  }
+
+  async function importConfiguration(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]; event.target.value = "";
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) { setConfigMessage("Tệp cấu hình vượt quá 2 MB."); return; }
+    try {
+      const data = JSON.parse(await file.text());
+      if (!data || typeof data !== "object") throw new Error("Tệp không phải cấu hình hợp lệ.");
+      const format = String(data.format || data.product || "").toLocaleLowerCase("vi-VN");
+      if (!format.includes("syland") && !format.includes("sỹ land")) throw new Error("Tệp không thuộc định dạng cấu hình SỸ LAND.");
+      const locationProfile = data.settings?.location_profile ?? data.settings?.locationProfile ?? data.location_profile ?? data.locationProfile;
+      if (locationProfile && typeof locationProfile === "object") localStorage.setItem("sy-land-location-profile", JSON.stringify(locationProfile));
+      window.dispatchEvent(new CustomEvent("syland-config-imported", { detail: { source: data.source || "software" } }));
+      setConfigMessage(locationProfile ? "Đã nhập cấu hình địa bàn. Hãy mở lại công cụ xử lý tệp để áp dụng." : "Tệp hợp lệ nhưng chưa có cấu hình địa bàn để nhập.");
+    } catch (reason) { setConfigMessage(reason instanceof Error ? reason.message : "Không đọc được tệp cấu hình."); }
+  }
+
   if (current) return (
     <section className="account-portal" id="tai-khoan" aria-labelledby="account-title">
       <div className="account-header"><div><p className="section-kicker">Trung tâm tài khoản</p><h2 id="account-title">Xin chào, {current.name}</h2><p>{current.role === "admin" ? `Quản trị viên SỸ LAND · ${REMOTE_AUTH ? "Tài khoản máy chủ" : "Chế độ cục bộ"}` : `Tài khoản SỸ LAND · ${REMOTE_AUTH ? "Đã đồng bộ" : "Chế độ cục bộ"}`}</p></div><button type="button" onClick={logout}>Đăng xuất</button></div>
@@ -352,7 +387,7 @@ export default function AccountPortal() {
           <form className="bug-form" onSubmit={saveReport}><h3>Ghi nhận lỗi kiểm thử</h3><label>Tên lỗi<input value={report.title} onChange={(event) => setReport((value) => ({ ...value, title: event.target.value }))} placeholder="Mô tả ngắn gọn" /></label><div><label>Khu vực<select value={report.area} onChange={(event) => setReport((value) => ({ ...value, area: event.target.value }))}><option>Xử lý PDF</option><option>Word/PDF/Excel</option><option>Địa bàn và mã xã</option><option>Đổi tên hàng loạt</option><option>Đối chiếu Excel</option><option>Đăng nhập</option><option>Giao diện</option><option>Khác</option></select></label><label>Mức độ<select value={report.severity} onChange={(event) => setReport((value) => ({ ...value, severity: event.target.value }))}><option>Thấp</option><option>Trung bình</option><option>Cao</option><option>Nghiêm trọng</option></select></label></div><label>Các bước tái hiện<textarea value={report.steps} onChange={(event) => setReport((value) => ({ ...value, steps: event.target.value }))} placeholder="1. Mở… 2. Chọn… 3. Nhấn…" /></label><label>Kết quả mong muốn<textarea value={report.expected} onChange={(event) => setReport((value) => ({ ...value, expected: event.target.value }))} /></label><label>Kết quả thực tế<textarea value={report.actual} onChange={(event) => setReport((value) => ({ ...value, actual: event.target.value }))} /></label><button type="submit">Lưu báo cáo lỗi</button></form>
           <div className="bug-list"><h3>Danh sách lỗi gần đây</h3>{!reports.length ? <p>Chưa có lỗi được ghi nhận.</p> : reports.slice(0, 20).map((item) => <article key={item.id}><div><span className={`severity ${item.severity.toLocaleLowerCase("vi-VN")}`}>{item.severity}</span><strong>{item.title}</strong><small>{item.area} · {new Date(item.createdAt).toLocaleString("vi-VN")}</small></div><select value={item.status} onChange={(event) => updateReport(item.id, event.target.value as BugReport["status"])}><option>Mới</option><option>Đang kiểm tra</option><option>Đã xử lý</option></select></article>)}</div>
         </div>
-      </div> : <div className="user-test-panel"><div className="account-notification-head"><div><span>TRUNG TÂM THÔNG BÁO</span><h3>{activeLicense ? `Bản quyền ${activeLicense.plan} đang hoạt động` : "Tài khoản SỸ LAND đã sẵn sàng"}</h3></div><b>{paymentNotices.filter((item) => item.licenseCode).length}</b></div>{paymentNotices.length > 0 && <div className="account-notifications">{paymentNotices.slice(0, 8).map((item) => <article className={item.licenseCode ? "license-ready" : ""} key={item.id}><span aria-hidden="true">{item.licenseCode ? "✓" : "…"}</span><div><strong>{item.licenseCode ? "Mã bản quyền đã được cấp" : `Đơn ${item.status.toLocaleLowerCase("vi-VN")}`}</strong><small>{item.orderCode} · Gói {item.plan} · {new Date(item.createdAt).toLocaleString("vi-VN")}</small>{item.licenseCode && <code>{item.licenseCode}</code>}</div>{item.licenseCode && <div className="notification-actions"><button type="button" onClick={() => void copyLicense(item.licenseCode)}>Sao chép</button><button type="button" onClick={() => void activateFromNotice(item.licenseCode)}>Kích hoạt ngay</button></div>}</article>)}</div>}{activeLicense ? <div className="activated-license"><span>ĐÃ KÍCH HOẠT TRÊN TÀI KHOẢN</span><strong>{activeLicense.code}</strong><p>Cấp cho {activeLicense.email} · Hết hạn {new Date(activeLicense.expiresAt).toLocaleDateString("vi-VN")}</p><div className="activated-actions"><button type="button" onClick={() => void copyLicense(activeLicense.code)}>Sao chép mã</button><button type="button" onClick={() => void activateFromNotice(activeLicense.code)}>Mở phần mềm và kích hoạt</button></div></div> : <><p>Bạn có thể sử dụng các công cụ công khai hoặc nhập mã bản quyền do quản trị viên cấp.</p><form className="activation-form" onSubmit={activateLicense}><label>Mã bản quyền<input value={activationCode} onChange={(event) => setActivationCode(event.target.value.toUpperCase())} placeholder="SYL-XXXXX-XXXXX" /></label><button type="submit">Kích hoạt mã</button></form></>}<a className="button button-primary" href="#minh-hoa">Mở công cụ</a><small>{REMOTE_AUTH ? "Bản quyền được gắn theo email và tự đồng bộ giữa website với phần mềm SỸ LAND khi đăng nhập." : "Chế độ cục bộ chưa đồng bộ dữ liệu giữa các thiết bị."}</small></div>}
+      </div> : <div className="user-test-panel"><div className="user-profile-summary"><div className="user-avatar" aria-hidden="true">{current.name.trim().charAt(0).toUpperCase()}</div><div><span>HỒ SƠ NGƯỜI DÙNG</span><strong>{current.name}</strong><small>{current.email} · Thành viên từ {new Date(current.createdAt).toLocaleDateString("vi-VN")}</small></div><a href="#thanh-toan">Quản lý gói</a></div><div className="account-notification-head"><div><span>TRUNG TÂM THÔNG BÁO</span><h3>{activeLicense ? `Bản quyền ${activeLicense.plan} đang hoạt động` : "Tài khoản SỸ LAND đã sẵn sàng"}</h3></div><b>{paymentNotices.filter((item) => item.licenseCode).length}</b></div>{paymentNotices.length > 0 && <div className="account-notifications">{paymentNotices.slice(0, 8).map((item) => <article className={item.licenseCode ? "license-ready" : ""} key={item.id}><span aria-hidden="true">{item.licenseCode ? "✓" : "…"}</span><div><strong>{item.licenseCode ? "Mã bản quyền đã được cấp" : `Đơn ${item.status.toLocaleLowerCase("vi-VN")}`}</strong><small>{item.orderCode} · Gói {item.plan} · {new Date(item.createdAt).toLocaleString("vi-VN")}</small>{item.licenseCode && <code>{item.licenseCode}</code>}</div>{item.licenseCode && <div className="notification-actions"><button type="button" onClick={() => void copyLicense(item.licenseCode)}>Sao chép</button><button type="button" onClick={() => void activateFromNotice(item.licenseCode)}>Kích hoạt ngay</button></div>}</article>)}</div>}{activeLicense ? <div className="activated-license"><span>ĐÃ KÍCH HOẠT TRÊN TÀI KHOẢN</span><strong>{activeLicense.code}</strong><p>Cấp cho {activeLicense.email} · {activeLicense.maxDevices || 1} thiết bị · Hết hạn {new Date(activeLicense.expiresAt).toLocaleDateString("vi-VN")}</p><div className="activated-actions"><button type="button" onClick={() => void copyLicense(activeLicense.code)}>Sao chép mã</button><button type="button" onClick={() => void activateFromNotice(activeLicense.code)}>Mở phần mềm và kích hoạt</button></div></div> : <><p>Bạn có thể sử dụng các công cụ công khai hoặc nhập mã bản quyền do quản trị viên cấp.</p><form className="activation-form" onSubmit={activateLicense}><label>Mã bản quyền<input value={activationCode} onChange={(event) => setActivationCode(event.target.value.toUpperCase())} placeholder="SYL-XXXXX-XXXXX" /></label><button type="submit">Kích hoạt mã</button></form></>}<section className="configuration-transfer"><div><span>ĐỒNG BỘ CẤU HÌNH</span><h3>Chuyển cấu hình giữa website và phần mềm</h3><p>Xuất địa bàn, đơn vị hành chính và tùy chọn nghiệp vụ ra JSON; sau đó nhập vào SỸ LAND trên thiết bị khác. Không xuất mật khẩu, phiên đăng nhập hoặc mã bản quyền.</p></div><input ref={configInputRef} type="file" accept="application/json,.json" onChange={(event) => void importConfiguration(event)} /><div className="configuration-actions"><button type="button" onClick={exportConfiguration}>Xuất cấu hình</button><button type="button" onClick={() => configInputRef.current?.click()}>Nhập từ phần mềm</button></div>{configMessage && <p role="status">{configMessage}</p>}<small>Định dạng dùng chung: syland-config · schema_version 1 · UTF-8 JSON</small></section><div className="account-quick-actions"><a href="#minh-hoa">Mở công cụ</a><a href="#cong-cu-pdf">Công cụ PDF</a><a href="#tai-phan-mem">Tải phần mềm</a><a href="#thanh-toan">Thanh toán</a></div><small>{REMOTE_AUTH ? "Bản quyền được gắn theo email và tự đồng bộ giữa website với phần mềm SỸ LAND khi đăng nhập." : "Chế độ cục bộ chưa đồng bộ dữ liệu giữa các thiết bị."}</small></div>}
       {message && <p className="account-message">{message}</p>}
     </section>
   );
