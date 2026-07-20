@@ -25,6 +25,11 @@ const SUPABASE_URL_VALID = /^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(SUPABASE
 const REMOTE_AUTH = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY && SUPABASE_URL_VALID);
 const AUTH_CONFIG_ERROR = (AUTH_INPUT_PRESENT && !REMOTE_AUTH) || (import.meta.env.PROD && !REMOTE_AUTH);
 
+function authRedirectUrl() {
+  const basePath = String(import.meta.env.BASE_URL || "/SY-LAND/");
+  return `${new URL(basePath, location.origin).toString()}#tai-khoan`;
+}
+
 function bytesToHex(bytes: Uint8Array) { return Array.from(bytes).map((value) => value.toString(16).padStart(2, "0")).join(""); }
 function randomSalt() { const bytes = crypto.getRandomValues(new Uint8Array(16)); return bytesToHex(bytes); }
 async function hashPassword(password: string, salt: string) { return bytesToHex(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${salt}:${password}`)))); }
@@ -190,7 +195,7 @@ export default function AccountPortal() {
     if (mode === "forgot" && REMOTE_AUTH) {
       if (!normalizedEmail) { setMessage("Hãy nhập email đã đăng ký."); return; }
       try {
-        await remoteAuth("/recover", { email: normalizedEmail, redirect_to: `${location.origin}${location.pathname}#tai-khoan` });
+        await remoteAuth("/recover", { email: normalizedEmail, redirect_to: authRedirectUrl() });
         setMessage("Nếu email tồn tại, hướng dẫn đặt lại mật khẩu đã được gửi. Hãy kiểm tra cả thư rác.");
       } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Không gửi được email khôi phục."); }
       return;
@@ -218,7 +223,8 @@ export default function AccountPortal() {
         if (password.length < 8) { setMessage("Mật khẩu cần ít nhất 8 ký tự."); return; }
         if (password !== confirm) { setMessage("Mật khẩu xác nhận chưa khớp."); return; }
         if (!acceptedTerms) { setMessage("Hãy đồng ý Chính sách bảo mật và Điều khoản sử dụng."); return; }
-        const data = await remoteAuth("/signup", { email: normalizedEmail, password, data: { full_name: name.trim(), terms_version: TERMS_VERSION, terms_accepted_at: new Date().toISOString() } });
+        const redirectTo = encodeURIComponent(authRedirectUrl());
+        const data = await remoteAuth(`/signup?redirect_to=${redirectTo}`, { email: normalizedEmail, password, data: { full_name: name.trim(), terms_version: TERMS_VERSION, terms_accepted_at: new Date().toISOString() } });
         setPassword(""); setConfirm(""); setMode("login");
         setMessage(data.access_token ? "Đăng ký thành công. Hãy đăng nhập." : "Đã đăng ký. Hãy kiểm tra email xác nhận rồi đăng nhập."); return;
       } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Không kết nối được máy chủ tài khoản."); return; }
