@@ -341,7 +341,9 @@ export default function AccountPortal() {
 
   function exportConfiguration() {
     let locationProfile: unknown = null;
+    let desktopSettings: unknown = null;
     try { locationProfile = JSON.parse(localStorage.getItem("sy-land-location-profile") || "null"); } catch { /* Bỏ qua cấu hình cũ bị lỗi. */ }
+    try { desktopSettings = JSON.parse(localStorage.getItem("sy-land-desktop-settings") || "null"); } catch { /* Bỏ qua cấu hình cũ bị lỗi. */ }
     const configuration = {
       format: "syland-config",
       schema_version: 1,
@@ -349,7 +351,7 @@ export default function AccountPortal() {
       source: "website",
       exported_at: new Date().toISOString(),
       user: current ? { name: current.name, email: current.email } : null,
-      settings: { location_profile: locationProfile },
+      settings: { location_profile: locationProfile, app_settings: desktopSettings },
       security: { contains_password: false, contains_session_token: false, contains_license_code: false },
     };
     downloadJson(configuration, `SYLAND_CAU_HINH_${new Date().toISOString().slice(0, 10)}.json`);
@@ -367,8 +369,10 @@ export default function AccountPortal() {
       if (!format.includes("syland") && !format.includes("sỹ land")) throw new Error("Tệp không thuộc định dạng cấu hình SỸ LAND.");
       const locationProfile = data.settings?.location_profile ?? data.settings?.locationProfile ?? data.location_profile ?? data.locationProfile;
       if (locationProfile && typeof locationProfile === "object") localStorage.setItem("sy-land-location-profile", JSON.stringify(locationProfile));
+      const desktopSettings = data.settings?.app_settings ?? data.settings?.desktop_settings;
+      if (desktopSettings && typeof desktopSettings === "object") localStorage.setItem("sy-land-desktop-settings", JSON.stringify(desktopSettings));
       window.dispatchEvent(new CustomEvent("syland-config-imported", { detail: { source: data.source || "software" } }));
-      setConfigMessage(locationProfile ? "Đã nhập cấu hình địa bàn. Hãy mở lại công cụ xử lý tệp để áp dụng." : "Tệp hợp lệ nhưng chưa có cấu hình địa bàn để nhập.");
+      setConfigMessage(locationProfile || desktopSettings ? "Đã nhập cấu hình dùng chung. Hãy mở lại công cụ để áp dụng." : "Tệp hợp lệ nhưng chưa có cấu hình để nhập.");
     } catch (reason) { setConfigMessage(reason instanceof Error ? reason.message : "Không đọc được tệp cấu hình."); }
   }
 
