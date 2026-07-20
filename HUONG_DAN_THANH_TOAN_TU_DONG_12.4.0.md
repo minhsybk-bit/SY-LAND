@@ -10,6 +10,15 @@
 6. Supabase tự tạo mã bản quyền, đúng gói, thời hạn và số thiết bị.
 7. Mã xuất hiện trong lịch sử đơn của người dùng và bảng bản quyền.
 
+## Bộ chọn gói kinh tế
+
+- Người dùng nhập số người, số hồ sơ/tháng và ngân sách dự kiến.
+- Hệ thống đề xuất gói Cá nhân, Văn phòng hoặc yêu cầu báo giá riêng.
+- Thanh toán tháng: linh hoạt, không giảm giá.
+- Thanh toán 06 tháng: giảm 10% tổng giá.
+- Thanh toán 12 tháng: giảm 20% tổng giá.
+- Giá và mức giảm được Supabase tính lại; không tin số tiền sửa từ trình duyệt.
+
 ## Cấu hình ngân hàng bắt buộc
 
 Thông tin đã cấu hình:

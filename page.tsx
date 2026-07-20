@@ -137,6 +137,7 @@ export default function Home() {
             <a href="#tai-phan-mem">Tải phần mềm</a>
             <a href="#tai-khoan">Tài khoản</a>
             <a href="#goi-dich-vu">Gói dịch vụ</a>
+            <a href="#thanh-toan">Chọn gói</a>
             <a href="#gioi-thieu">Giới thiệu</a>
           </nav>
 
@@ -262,12 +263,11 @@ export default function Home() {
           <SupportCenter />
           <LegalCenter />
           <PrivacyCenter />
-          <PaymentCenter />
 
           <section className="pricing" id="goi-dich-vu" aria-labelledby="pricing-title">
             <div className="section-heading split-heading pricing-heading">
               <div><p className="section-kicker">MVP thương mại</p><h2 id="pricing-title">Bắt đầu nhỏ.<br />Mở rộng khi cần.</h2></div>
-              <p>Mức giá dự kiến để thử nghiệm thị trường. Chưa thu phí ở phiên bản nguyên mẫu; mọi gói trả phí chỉ mở khi đăng nhập, lưu trữ và thanh toán đã hoàn thiện.</p>
+              <p>Chọn theo số người và số hồ sơ thực tế. Có thể thanh toán từng tháng hoặc tiết kiệm hơn khi chọn chu kỳ 6–12 tháng; quy mô lớn được báo giá riêng.</p>
             </div>
             <div className="pricing-grid">
               {plans.map((plan) => <article className={`pricing-card ${plan.featured ? "featured" : ""}`} key={plan.name}>
@@ -276,15 +276,16 @@ export default function Home() {
                 <div className="plan-price"><strong>{plan.price}</strong><span>{plan.cadence}</span></div>
                 <p className="plan-description">{plan.description}</p>
                 <ul>{plan.features.map((feature) => <li key={feature}><span aria-hidden="true">✓</span>{feature}</li>)}</ul>
-                <a className={`button ${plan.featured ? "button-primary" : "plan-button"}`} href={plan.name === "Cá nhân" ? "#minh-hoa" : "#lo-trinh"}>{plan.action}<span aria-hidden="true">→</span></a>
+                <a className={`button ${plan.featured ? "button-primary" : "plan-button"}`} href={plan.name === "Đơn vị" ? "#tu-van" : "#thanh-toan"}>{plan.name === "Đơn vị" ? "Nhận báo giá riêng" : "Chọn gói này"}<span aria-hidden="true">→</span></a>
               </article>)}
             </div>
+            <PaymentCenter />
             <ValueCalculator />
             <TrialRequest />
             <div className="commercial-roadmap" id="lo-trinh">
-              <div><span>01</span><strong>Nguyên mẫu đang hoạt động</strong><small>Xử lý cục bộ, chưa thu phí</small></div>
-              <div><span>02</span><strong>Tài khoản quản trị cục bộ</strong><small>Đã có để kiểm thử; kho máy chủ là giai đoạn tiếp theo</small></div>
-              <div><span>03</span><strong>Thanh toán và vận hành</strong><small>Mở sau khi kiểm thử bảo mật</small></div>
+              <div><span>01</span><strong>Công cụ đang hoạt động</strong><small>Xử lý hồ sơ cục bộ và giữ tệp gốc</small></div>
+              <div><span>02</span><strong>Tài khoản và bản quyền chung</strong><small>Đăng nhập trên website và phần mềm cài đặt</small></div>
+              <div><span>03</span><strong>Thanh toán có đối soát</strong><small>QR theo đơn; tự cấp mã khi admin xác nhận</small></div>
             </div>
           </section>
 

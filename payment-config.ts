@@ -12,3 +12,14 @@ export const PAYMENT_PLANS = [
   { id: "personal", name: "Cá nhân", amount: 199000, months: 1, maxDevices: 1, description: "01 người dùng · 01 thiết bị · 300 hồ sơ/tháng" },
   { id: "office", name: "Văn phòng", amount: 1490000, months: 1, maxDevices: 5, description: "Tối đa 05 người dùng · 05 thiết bị · 2.500 hồ sơ/tháng" },
 ] as const;
+
+export const BILLING_CYCLES = [
+  { months: 1, label: "Hàng tháng", discount: 0 },
+  { months: 6, label: "06 tháng", discount: 10 },
+  { months: 12, label: "12 tháng", discount: 20 },
+] as const;
+
+export function planTotal(baseAmount: number, months: number) {
+  const discount = months === 12 ? 20 : months === 6 ? 10 : 0;
+  return Math.round(baseAmount * months * (100 - discount) / 100);
+}
