@@ -156,6 +156,7 @@ export default function Home() {
           </nav>
 
           <div className="header-tools">
+            <a className="account-shortcut" href="#tai-khoan" aria-label="Mở tài khoản người dùng"><span aria-hidden="true">●</span><b>Tài khoản</b></a>
             <a className="header-action" href="#minh-hoa">Mở công cụ</a>
             <details className="mobile-menu">
               <summary aria-label="Mở menu"><span /><span /><span /></summary>
