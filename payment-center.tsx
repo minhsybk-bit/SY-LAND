@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { BILLING_CYCLES, PAYMENT_CONFIG, PAYMENT_PLANS, planTotal } from "./payment-config";
 
-type Payment = { id: string; orderCode: string; plan: string; amount: number; transferContent: string; status: "Chờ thanh toán" | "Chờ xác nhận" | "Đã thanh toán" | "Từ chối" | "Đã hủy"; licenseCode: string; createdAt: string };
+type Payment = { id: string; orderCode: string; plan: string; amount: number; transferContent: string; status: "Chờ thanh toán" | "Chờ xác nhận" | "Đã thanh toán" | "Từ chối" | "Đã hủy"; licenseCode: string; createdAt: string; confirmedAt: string };
 const URL = String(import.meta.env.VITE_SUPABASE_URL || "").trim().replace(/\/$/, "");
 const KEY = String(import.meta.env.VITE_SUPABASE_ANON_KEY || "");
 
@@ -12,7 +12,7 @@ async function rest(path: string, token: string, options: { method?: "GET" | "PO
   const response = await fetch(`${URL}/rest/v1${path}`, { method: options.method || "GET", headers: { apikey: KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json", Prefer: "return=representation" }, ...(options.payload === undefined ? {} : { body: JSON.stringify(options.payload) }) });
   const data = await response.json().catch(() => null); if (!response.ok) throw new Error(data?.message || data?.hint || "Không kết nối được máy chủ thanh toán."); return data;
 }
-function mapPayment(item: any): Payment { return { id: item.id, orderCode: item.order_code, plan: item.plan, amount: item.amount, transferContent: item.transfer_content, status: item.status, licenseCode: item.license_code || "", createdAt: item.created_at }; }
+function mapPayment(item: any): Payment { return { id: item.id, orderCode: item.order_code, plan: item.plan, amount: item.amount, transferContent: item.transfer_content, status: item.status, licenseCode: item.license_code || "", createdAt: item.created_at, confirmedAt: item.confirmed_at || "" }; }
 
 export default function PaymentCenter() {
   const [planId, setPlanId] = useState<(typeof PAYMENT_PLANS)[number]["id"]>("personal");
@@ -24,6 +24,7 @@ export default function PaymentCenter() {
   const [active, setActive] = useState<Payment | null>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const knownPayments = useRef<Record<string, string>>({});
   const currentSession = typeof window === "undefined" ? null : session();
   const isAdmin = currentSession?.account?.role === "admin";
   const configured = Boolean(PAYMENT_CONFIG.bankBin && PAYMENT_CONFIG.accountNumber && PAYMENT_CONFIG.bankName);
@@ -36,7 +37,16 @@ export default function PaymentCenter() {
 
   async function load() {
     const auth = session(); if (!auth?.accessToken) return;
-    try { const rows = await rest("/payment_orders?select=id,order_code,plan,amount,transfer_content,status,license_code,created_at&order=created_at.desc&limit=100", auth.accessToken); const next = Array.isArray(rows) ? rows.map(mapPayment) : []; setPayments(next); setActive((value) => value ? next.find((item) => item.id === value.id) || value : value); window.dispatchEvent(new Event("syland-payment-updated")); }
+    try {
+      const rows = await rest("/payment_orders?select=id,order_code,plan,amount,transfer_content,status,license_code,created_at,confirmed_at&order=created_at.desc&limit=100", auth.accessToken);
+      const next = Array.isArray(rows) ? rows.map(mapPayment) : [];
+      const paid = next.find((item) => item.status === "Đã thanh toán" && item.licenseCode && knownPayments.current[item.id] && knownPayments.current[item.id] !== "Đã thanh toán");
+      knownPayments.current = Object.fromEntries(next.map((item) => [item.id, item.status]));
+      setPayments(next);
+      setActive((value) => paid || (value ? next.find((item) => item.id === value.id) || value : value));
+      if (paid) setMessage(`Thanh toán ${paid.orderCode} đã được xác nhận thành công. Mã bản quyền đã gửi vào Trung tâm tài khoản.`);
+      window.dispatchEvent(new Event("syland-payment-updated"));
+    }
     catch { /* Schema có thể chưa được cài. */ }
   }
   useEffect(() => { void load(); const timer = window.setInterval(() => void load(), 30000); return () => window.clearInterval(timer); }, []);
@@ -63,7 +73,15 @@ export default function PaymentCenter() {
     const auth = session(); if (!isAdmin || !auth?.accessToken) return;
     if (status === "Đã thanh toán" && !window.confirm(`Xác nhận đã nhận ${item.amount.toLocaleString("vi-VN")}đ cho ${item.orderCode}? Mã bản quyền sẽ được cấp tự động.`)) return;
     setBusy(true);
-    try { await rest(`/payment_orders?id=eq.${encodeURIComponent(item.id)}`, auth.accessToken, { method: "PATCH", payload: { status } }); await load(); setMessage(status === "Đã thanh toán" ? "Đã xác nhận. Hệ thống đã tự tạo mã bản quyền." : "Đã từ chối đơn thanh toán."); }
+    try {
+      const rows = await rest(`/payment_orders?id=eq.${encodeURIComponent(item.id)}`, auth.accessToken, { method: "PATCH", payload: { status } });
+      const row = Array.isArray(rows) ? rows[0] : rows;
+      if (!row) throw new Error("Máy chủ không trả về đơn đã cập nhật. Hãy kiểm tra quyền quản trị và chính sách RLS.");
+      const updated = mapPayment(row);
+      if (status === "Đã thanh toán" && (!updated?.licenseCode || updated.status !== "Đã thanh toán")) throw new Error("Máy chủ chưa tạo được mã bản quyền. Hãy chạy lại SUPABASE_PAYMENTS.sql rồi xác nhận lại.");
+      await load();
+      setMessage(status === "Đã thanh toán" ? `Đã xác nhận thanh toán và cấp mã ${updated.licenseCode}. Người dùng sẽ nhận trong Trung tâm tài khoản.` : "Đã từ chối đơn thanh toán.");
+    }
     catch (reason) { setMessage(reason instanceof Error ? reason.message : "Không xác nhận được đơn."); } finally { setBusy(false); }
   }
 
