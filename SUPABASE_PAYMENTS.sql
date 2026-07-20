@@ -61,7 +61,7 @@ drop policy if exists "payment_admin_update" on public.payment_orders;
 create policy "payment_admin_update" on public.payment_orders for update to authenticated using (public.is_syland_admin()) with check (public.is_syland_admin());
 
 create or replace function public.issue_paid_license() returns trigger language plpgsql security definer set search_path = public as $$
-declare v_code text;
+declare v_code text; v_hash text;
 begin
   new.updated_at := now();
   if not public.is_syland_admin() then
@@ -80,7 +80,11 @@ begin
   if new.status = 'Đã thanh toán' and old.status is distinct from new.status then
     if not public.is_syland_admin() then raise exception 'Chỉ quản trị viên được xác nhận thanh toán'; end if;
     if new.license_code is not null then return new; end if;
-    v_code := 'SYL-' || upper(substr(encode(gen_random_bytes(8), 'hex'), 1, 5)) || '-' || upper(substr(encode(gen_random_bytes(8), 'hex'), 1, 5));
+    -- Không phụ thuộc pgcrypto/gen_random_bytes vì một số dự án Supabase đặt
+    -- extension ngoài search_path. MD5 ở đây chỉ tạo mã định danh ngẫu nhiên,
+    -- không dùng để lưu mật khẩu hay dữ liệu bảo mật.
+    v_hash := upper(md5(random()::text || clock_timestamp()::text || new.id::text || new.email));
+    v_code := 'SYL-' || substr(v_hash, 1, 5) || '-' || substr(v_hash, 6, 5);
     insert into public.licenses(code, customer, email, plan, expires_at, status, created_by, max_devices)
     values (v_code, new.customer, new.email, new.plan, now() + make_interval(months => new.duration_months), 'Hoạt động', auth.uid(), new.max_devices);
     new.license_code := v_code; new.confirmed_by := auth.uid(); new.confirmed_at := now();
