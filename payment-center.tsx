@@ -78,7 +78,7 @@ export default function PaymentCenter() {
     if (!window.confirm(question)) { setMessage("Đã hủy thao tác, trạng thái đơn không thay đổi."); return; }
     setBusy(true);
     try {
-      const rows = await rest(`/payment_orders?id=eq.${encodeURIComponent(item.id)}`, auth.accessToken, { method: "PATCH", payload: { status } });
+      const rows = await rest("/rpc/admin_confirm_payment", auth.accessToken, { method: "POST", payload: { p_order_id: item.id, p_status: status } });
       const row = Array.isArray(rows) ? rows[0] : rows;
       if (!row) throw new Error("Máy chủ không trả về đơn đã cập nhật. Hãy kiểm tra quyền quản trị và chính sách RLS.");
       const updated = mapPayment(row);
