@@ -10,6 +10,7 @@ type DeviceActivation = { id: string; licenseId: string; deviceHash: string; dev
 type AuditEvent = { id: string; action: string; entityType: string; entityId: string; details: Record<string, unknown>; createdAt: string };
 type Lead = { id: string; unit: string; contact: string; monthlyVolume: number; people: number; needs: string[]; proposedPlan: string; note: string; status: "Mới" | "Đang liên hệ" | "Đã chuyển đổi" | "Đã đóng"; createdAt: string };
 type SupportTicket = { id: string; ticketCode: string; title: string; category: string; priority: string; details: string; status: "Mới" | "Đang xử lý" | "Chờ người dùng" | "Đã giải quyết" | "Đã đóng"; appVersion: string; createdAt: string };
+type PaymentNotice = { id: string; orderCode: string; plan: string; status: string; licenseCode: string; createdAt: string; confirmedAt: string };
 
 const ACCOUNT_KEY = "sy-land-test-accounts";
 const SESSION_KEY = "sy-land-test-session";
@@ -78,6 +79,7 @@ export default function AccountPortal() {
   const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
+  const [paymentNotices, setPaymentNotices] = useState<PaymentNotice[]>([]);
   const [licenseDraft, setLicenseDraft] = useState({ customer: "", email: "", plan: "Cá nhân" as License["plan"], months: 12, maxDevices: 1 });
   const [activationCode, setActivationCode] = useState("");
   const [activations, setActivations] = useState<Record<string, string>>({});
@@ -101,6 +103,8 @@ export default function AccountPortal() {
       if (Array.isArray(rows)) setLicenses(rows.map((item: any) => ({ id: item.id, code: item.code, customer: item.customer, email: item.email, plan: item.plan, expiresAt: item.expires_at, status: item.status, createdAt: item.created_at, maxDevices: item.max_devices })));
       const deviceRows = await remoteData(`/device_activations?select=id,license_id,device_hash,device_name,app_version,status,first_seen_at,last_seen_at&order=last_seen_at.desc`, accessToken);
       if (Array.isArray(deviceRows)) setDevices(deviceRows.map((item: any) => ({ id: item.id, licenseId: item.license_id, deviceHash: item.device_hash, deviceName: item.device_name, appVersion: item.app_version, status: item.status, firstSeenAt: item.first_seen_at, lastSeenAt: item.last_seen_at })));
+      const paymentRows = await remoteData(`/payment_orders?select=id,order_code,plan,status,license_code,created_at,confirmed_at&order=created_at.desc&limit=20`, accessToken);
+      if (Array.isArray(paymentRows)) setPaymentNotices(paymentRows.map((item: any) => ({ id: item.id, orderCode: item.order_code, plan: item.plan, status: item.status, licenseCode: item.license_code || "", createdAt: item.created_at, confirmedAt: item.confirmed_at || "" })));
       if (profile?.role === "admin") {
         const eventRows = await remoteData(`/audit_events?select=id,action,entity_type,entity_id,details,created_at&order=created_at.desc&limit=50`, accessToken);
         if (Array.isArray(eventRows)) setAuditEvents(eventRows.map((item: any) => ({ id: item.id, action: item.action, entityType: item.entity_type, entityId: item.entity_id, details: item.details || {}, createdAt: item.created_at })));
@@ -155,6 +159,25 @@ export default function AccountPortal() {
     }
     void restoreSession();
   }, []);
+
+  useEffect(() => {
+    if (!REMOTE_AUTH || !remoteToken || !current) return;
+    async function refreshEntitlements() {
+      try {
+        const [licenseRows, paymentRows] = await Promise.all([
+          remoteData(`/licenses?select=id,code,customer,email,plan,expires_at,status,created_at,max_devices&order=created_at.desc`, remoteToken),
+          remoteData(`/payment_orders?select=id,order_code,plan,status,license_code,created_at,confirmed_at&order=created_at.desc&limit=20`, remoteToken),
+        ]);
+        if (Array.isArray(licenseRows)) setLicenses(licenseRows.map((item: any) => ({ id: item.id, code: item.code, customer: item.customer, email: item.email, plan: item.plan, expiresAt: item.expires_at, status: item.status, createdAt: item.created_at, maxDevices: item.max_devices })));
+        if (Array.isArray(paymentRows)) setPaymentNotices(paymentRows.map((item: any) => ({ id: item.id, orderCode: item.order_code, plan: item.plan, status: item.status, licenseCode: item.license_code || "", createdAt: item.created_at, confirmedAt: item.confirmed_at || "" })));
+      } catch { /* Giữ dữ liệu hiện tại nếu mạng tạm gián đoạn. */ }
+    }
+    const onPaymentUpdated = () => void refreshEntitlements();
+    window.addEventListener("syland-payment-updated", onPaymentUpdated);
+    const timer = window.setInterval(refreshEntitlements, 30000);
+    void refreshEntitlements();
+    return () => { window.removeEventListener("syland-payment-updated", onPaymentUpdated); window.clearInterval(timer); };
+  }, [current, remoteToken]);
 
   function saveAccounts(next: Account[]) { setAccounts(next); localStorage.setItem(ACCOUNT_KEY, JSON.stringify(next)); }
 
@@ -298,6 +321,22 @@ export default function AccountPortal() {
     setActivations(next); localStorage.setItem(ACTIVATION_KEY, JSON.stringify(next)); setActivationCode(""); setMessage("Kích hoạt bản quyền kiểm thử thành công.");
   }
 
+  async function copyLicense(code: string) {
+    try { await navigator.clipboard.writeText(code); setMessage("Đã sao chép mã bản quyền. Bạn có thể dán vào phần mềm SỸ LAND."); }
+    catch { setActivationCode(code); setMessage("Đã điền mã vào ô kích hoạt."); }
+  }
+
+  async function activateFromNotice(code: string) {
+    if (!current) return;
+    if (REMOTE_AUTH) {
+      await copyLicense(code);
+      setMessage("Bản quyền đã tự gắn với tài khoản này. Đang mở phần mềm SỸ LAND; nếu trình duyệt hỏi, hãy chọn Cho phép.");
+      window.location.href = `syland://activate?code=${encodeURIComponent(code)}&email=${encodeURIComponent(current.email)}`;
+      return;
+    }
+    setActivationCode(code); setMessage("Đã tự điền mã. Nhấn Kích hoạt mã để hoàn tất.");
+  }
+
   if (current) return (
     <section className="account-portal" id="tai-khoan" aria-labelledby="account-title">
       <div className="account-header"><div><p className="section-kicker">Trung tâm tài khoản</p><h2 id="account-title">Xin chào, {current.name}</h2><p>{current.role === "admin" ? `Quản trị viên SỸ LAND · ${REMOTE_AUTH ? "Tài khoản máy chủ" : "Chế độ cục bộ"}` : `Tài khoản SỸ LAND · ${REMOTE_AUTH ? "Đã đồng bộ" : "Chế độ cục bộ"}`}</p></div><button type="button" onClick={logout}>Đăng xuất</button></div>
@@ -313,7 +352,7 @@ export default function AccountPortal() {
           <form className="bug-form" onSubmit={saveReport}><h3>Ghi nhận lỗi kiểm thử</h3><label>Tên lỗi<input value={report.title} onChange={(event) => setReport((value) => ({ ...value, title: event.target.value }))} placeholder="Mô tả ngắn gọn" /></label><div><label>Khu vực<select value={report.area} onChange={(event) => setReport((value) => ({ ...value, area: event.target.value }))}><option>Xử lý PDF</option><option>Word/PDF/Excel</option><option>Địa bàn và mã xã</option><option>Đổi tên hàng loạt</option><option>Đối chiếu Excel</option><option>Đăng nhập</option><option>Giao diện</option><option>Khác</option></select></label><label>Mức độ<select value={report.severity} onChange={(event) => setReport((value) => ({ ...value, severity: event.target.value }))}><option>Thấp</option><option>Trung bình</option><option>Cao</option><option>Nghiêm trọng</option></select></label></div><label>Các bước tái hiện<textarea value={report.steps} onChange={(event) => setReport((value) => ({ ...value, steps: event.target.value }))} placeholder="1. Mở… 2. Chọn… 3. Nhấn…" /></label><label>Kết quả mong muốn<textarea value={report.expected} onChange={(event) => setReport((value) => ({ ...value, expected: event.target.value }))} /></label><label>Kết quả thực tế<textarea value={report.actual} onChange={(event) => setReport((value) => ({ ...value, actual: event.target.value }))} /></label><button type="submit">Lưu báo cáo lỗi</button></form>
           <div className="bug-list"><h3>Danh sách lỗi gần đây</h3>{!reports.length ? <p>Chưa có lỗi được ghi nhận.</p> : reports.slice(0, 20).map((item) => <article key={item.id}><div><span className={`severity ${item.severity.toLocaleLowerCase("vi-VN")}`}>{item.severity}</span><strong>{item.title}</strong><small>{item.area} · {new Date(item.createdAt).toLocaleString("vi-VN")}</small></div><select value={item.status} onChange={(event) => updateReport(item.id, event.target.value as BugReport["status"])}><option>Mới</option><option>Đang kiểm tra</option><option>Đã xử lý</option></select></article>)}</div>
         </div>
-      </div> : <div className="user-test-panel"><h3>{activeLicense ? `Bản quyền ${activeLicense.plan} đang hoạt động` : "Tài khoản SỸ LAND đã sẵn sàng"}</h3>{activeLicense ? <div className="activated-license"><span>ĐÃ KÍCH HOẠT</span><strong>{activeLicense.code}</strong><p>Cấp cho {activeLicense.email} · Hết hạn {new Date(activeLicense.expiresAt).toLocaleDateString("vi-VN")}</p></div> : <><p>Bạn có thể sử dụng các công cụ công khai hoặc nhập mã bản quyền do quản trị viên cấp.</p><form className="activation-form" onSubmit={activateLicense}><label>Mã bản quyền<input value={activationCode} onChange={(event) => setActivationCode(event.target.value.toUpperCase())} placeholder="SYL-XXXXX-XXXXX" /></label><button type="submit">Kích hoạt mã</button></form></>}<a className="button button-primary" href="#minh-hoa">Mở công cụ</a><small>{REMOTE_AUTH ? "Tài khoản được đồng bộ giữa website và phần mềm SỸ LAND." : "Chế độ cục bộ chưa đồng bộ dữ liệu giữa các thiết bị."}</small></div>}
+      </div> : <div className="user-test-panel"><div className="account-notification-head"><div><span>TRUNG TÂM THÔNG BÁO</span><h3>{activeLicense ? `Bản quyền ${activeLicense.plan} đang hoạt động` : "Tài khoản SỸ LAND đã sẵn sàng"}</h3></div><b>{paymentNotices.filter((item) => item.licenseCode).length}</b></div>{paymentNotices.length > 0 && <div className="account-notifications">{paymentNotices.slice(0, 8).map((item) => <article className={item.licenseCode ? "license-ready" : ""} key={item.id}><span aria-hidden="true">{item.licenseCode ? "✓" : "…"}</span><div><strong>{item.licenseCode ? "Mã bản quyền đã được cấp" : `Đơn ${item.status.toLocaleLowerCase("vi-VN")}`}</strong><small>{item.orderCode} · Gói {item.plan} · {new Date(item.createdAt).toLocaleString("vi-VN")}</small>{item.licenseCode && <code>{item.licenseCode}</code>}</div>{item.licenseCode && <div className="notification-actions"><button type="button" onClick={() => void copyLicense(item.licenseCode)}>Sao chép</button><button type="button" onClick={() => void activateFromNotice(item.licenseCode)}>Kích hoạt ngay</button></div>}</article>)}</div>}{activeLicense ? <div className="activated-license"><span>ĐÃ KÍCH HOẠT TRÊN TÀI KHOẢN</span><strong>{activeLicense.code}</strong><p>Cấp cho {activeLicense.email} · Hết hạn {new Date(activeLicense.expiresAt).toLocaleDateString("vi-VN")}</p><div className="activated-actions"><button type="button" onClick={() => void copyLicense(activeLicense.code)}>Sao chép mã</button><button type="button" onClick={() => void activateFromNotice(activeLicense.code)}>Mở phần mềm và kích hoạt</button></div></div> : <><p>Bạn có thể sử dụng các công cụ công khai hoặc nhập mã bản quyền do quản trị viên cấp.</p><form className="activation-form" onSubmit={activateLicense}><label>Mã bản quyền<input value={activationCode} onChange={(event) => setActivationCode(event.target.value.toUpperCase())} placeholder="SYL-XXXXX-XXXXX" /></label><button type="submit">Kích hoạt mã</button></form></>}<a className="button button-primary" href="#minh-hoa">Mở công cụ</a><small>{REMOTE_AUTH ? "Bản quyền được gắn theo email và tự đồng bộ giữa website với phần mềm SỸ LAND khi đăng nhập." : "Chế độ cục bộ chưa đồng bộ dữ liệu giữa các thiết bị."}</small></div>}
       {message && <p className="account-message">{message}</p>}
     </section>
   );
