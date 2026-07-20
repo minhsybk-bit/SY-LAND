@@ -129,19 +129,51 @@ export default function Home() {
           </a>
 
           <nav className="main-nav" aria-label="Điều hướng chính">
-            <a href="#tinh-nang">Tính năng</a>
-            <a href="#quy-trinh">Quy trình</a>
-            <a href="#minh-hoa">Xử lý tệp</a>
-            <a href="#cong-cu-pdf">Công cụ PDF</a>
-            <a href="#chuc-nang-phan-mem">Phần mềm</a>
-            <a href="#tai-phan-mem">Tải phần mềm</a>
-            <a href="#tai-khoan">Tài khoản</a>
-            <a href="#goi-dich-vu">Gói dịch vụ</a>
-            <a href="#thanh-toan">Chọn gói</a>
-            <a href="#gioi-thieu">Giới thiệu</a>
+            <a className="nav-direct" href="#top">Tổng quan</a>
+            <details className="nav-group">
+              <summary>Công cụ <span aria-hidden="true">⌄</span></summary>
+              <div className="nav-dropdown">
+                <a href="#minh-hoa"><b>Xử lý tệp</b><small>Word, PDF, Excel và dữ liệu địa chính</small></a>
+                <a href="#cong-cu-pdf"><b>Bộ công cụ PDF</b><small>Tách, ghép, kiểm tra, OCR và tối ưu</small></a>
+                <a href="#chuc-nang-phan-mem"><b>Phần mềm SỸ LAND</b><small>Các chức năng dành cho Windows</small></a>
+              </div>
+            </details>
+            <details className="nav-group">
+              <summary>Sản phẩm <span aria-hidden="true">⌄</span></summary>
+              <div className="nav-dropdown">
+                <a href="#tai-phan-mem"><b>Tải phần mềm</b><small>Phiên bản mới và hướng dẫn cập nhật</small></a>
+                <a href="#tai-khoan"><b>Tài khoản</b><small>Đăng ký, đăng nhập và quản lý bản quyền</small></a>
+              </div>
+            </details>
+            <details className="nav-group">
+              <summary>Dịch vụ <span aria-hidden="true">⌄</span></summary>
+              <div className="nav-dropdown nav-dropdown-right">
+                <a href="#goi-dich-vu"><b>Gói sử dụng</b><small>So sánh quyền lợi theo nhu cầu</small></a>
+                <a href="#thanh-toan"><b>Đăng ký và thanh toán</b><small>Chọn gói, quét QR và nhận mã</small></a>
+              </div>
+            </details>
+            <a className="nav-direct" href="#gioi-thieu">Giới thiệu</a>
           </nav>
 
-          <a className="header-action" href="#minh-hoa">Dùng công cụ</a>
+          <div className="header-tools">
+            <a className="header-action" href="#minh-hoa">Mở công cụ</a>
+            <details className="mobile-menu">
+              <summary aria-label="Mở menu"><span /><span /><span /></summary>
+              <div>
+                <a href="#top"><b>Tổng quan</b><small>Trang chủ SỸ LAND</small></a>
+                <p>Công cụ</p>
+                <a href="#minh-hoa">Xử lý Word, PDF, Excel</a>
+                <a href="#cong-cu-pdf">Bộ công cụ PDF</a>
+                <a href="#chuc-nang-phan-mem">Phần mềm SỸ LAND</a>
+                <p>Tài khoản và dịch vụ</p>
+                <a href="#tai-phan-mem">Tải phần mềm</a>
+                <a href="#tai-khoan">Tài khoản</a>
+                <a href="#goi-dich-vu">Gói sử dụng</a>
+                <a href="#thanh-toan">Đăng ký và thanh toán</a>
+                <a href="#gioi-thieu">Giới thiệu</a>
+              </div>
+            </details>
+          </div>
         </header>
 
         <div className="hero-grid page-shell" id="top">
