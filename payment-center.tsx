@@ -13,6 +13,7 @@ async function rest(path: string, token: string, options: { method?: "GET" | "PO
   const data = await response.json().catch(() => null); if (!response.ok) throw new Error(data?.message || data?.hint || "Không kết nối được máy chủ thanh toán."); return data;
 }
 function mapPayment(item: any): Payment { return { id: item.id, orderCode: item.order_code, plan: item.plan, amount: item.amount, transferContent: item.transfer_content, status: item.status, licenseCode: item.license_code || "", createdAt: item.created_at, confirmedAt: item.confirmed_at || "" }; }
+function paymentStatusLabel(status: Payment["status"]) { return status === "Đã thanh toán" ? "Đã xác nhận" : status; }
 
 export default function PaymentCenter() {
   const [planId, setPlanId] = useState<(typeof PAYMENT_PLANS)[number]["id"]>("personal");
@@ -71,7 +72,10 @@ export default function PaymentCenter() {
 
   async function adminConfirm(item: Payment, status: "Đã thanh toán" | "Từ chối") {
     const auth = session(); if (!isAdmin || !auth?.accessToken) return;
-    if (status === "Đã thanh toán" && !window.confirm(`Xác nhận đã nhận ${item.amount.toLocaleString("vi-VN")}đ cho ${item.orderCode}? Mã bản quyền sẽ được cấp tự động.`)) return;
+    const question = status === "Đã thanh toán"
+      ? `Xác nhận đã nhận ${item.amount.toLocaleString("vi-VN")}đ cho ${item.orderCode}? Mã bản quyền sẽ được cấp tự động.`
+      : `Từ chối đơn ${item.orderCode}? Người dùng sẽ thấy trạng thái đơn bị từ chối.`;
+    if (!window.confirm(question)) { setMessage("Đã hủy thao tác, trạng thái đơn không thay đổi."); return; }
     setBusy(true);
     try {
       const rows = await rest(`/payment_orders?id=eq.${encodeURIComponent(item.id)}`, auth.accessToken, { method: "PATCH", payload: { status } });
@@ -79,6 +83,9 @@ export default function PaymentCenter() {
       if (!row) throw new Error("Máy chủ không trả về đơn đã cập nhật. Hãy kiểm tra quyền quản trị và chính sách RLS.");
       const updated = mapPayment(row);
       if (status === "Đã thanh toán" && (!updated?.licenseCode || updated.status !== "Đã thanh toán")) throw new Error("Máy chủ chưa tạo được mã bản quyền. Hãy chạy lại SUPABASE_PAYMENTS.sql rồi xác nhận lại.");
+      setPayments((items) => items.map((value) => value.id === updated.id ? updated : value));
+      setActive((value) => value?.id === updated.id ? updated : value);
+      window.dispatchEvent(new Event("syland-payment-updated"));
       await load();
       setMessage(status === "Đã thanh toán" ? `Đã xác nhận thanh toán và cấp mã ${updated.licenseCode}. Người dùng sẽ nhận trong Trung tâm tài khoản.` : "Đã từ chối đơn thanh toán.");
     }
@@ -104,6 +111,6 @@ export default function PaymentCenter() {
     <div className="payment-grid"><div className="payment-plans">{PAYMENT_PLANS.map((item) => { const itemTotal = planTotal(item.amount, billingMonths); return <button type="button" className={item.id === planId ? "selected" : ""} key={item.id} onClick={() => setPlanId(item.id)}><span>{item.name}</span><strong>{itemTotal.toLocaleString("vi-VN")}đ<small>/ {billingMonths === 1 ? "tháng" : `${billingMonths} tháng`}</small></strong>{billingMonths > 1 && <em>{item.amount.toLocaleString("vi-VN")}đ/tháng · tiết kiệm {(item.amount * billingMonths - itemTotal).toLocaleString("vi-VN")}đ</em>}<p>{item.description}</p></button>})}<div className="payment-total"><span>Tổng thanh toán</span><strong>{total.toLocaleString("vi-VN")}đ</strong>{saving > 0 && <small>Đã giảm {saving.toLocaleString("vi-VN")}đ</small>}</div><button type="button" className="create-order" disabled={busy || !configured} onClick={createOrder}>Tạo đơn và mã QR</button></div>
       <div className="payment-qr">{active ? <><span>ĐƠN {active.orderCode}</span>{qrUrl && !active.licenseCode && <img src={qrUrl} alt={`Mã QR chuyển khoản đơn ${active.orderCode}`} />}<dl><div><dt>Ngân hàng</dt><dd>{PAYMENT_CONFIG.bankName}</dd></div><div><dt>Số tài khoản</dt><dd>{PAYMENT_CONFIG.accountNumber}</dd></div><div><dt>Chủ tài khoản</dt><dd>{PAYMENT_CONFIG.accountName}</dd></div><div><dt>Số tiền</dt><dd>{active.amount.toLocaleString("vi-VN")}đ</dd></div><div><dt>Nội dung</dt><dd><code>{active.transferContent}</code></dd></div></dl><button type="button" disabled={busy || active.status !== "Chờ thanh toán"} onClick={markTransferred}>{active.status === "Chờ thanh toán" ? "Tôi đã chuyển khoản" : active.status}</button>{active.licenseCode && <div className="payment-license"><small>THANH TOÁN THÀNH CÔNG · MÃ BẢN QUYỀN</small><strong>{active.licenseCode}</strong><button type="button" onClick={() => void useLicense(active.licenseCode)}>Nhận mã trong tài khoản</button></div>}</> : <div className="payment-empty"><b>QR</b><p>Chọn gói và tạo đơn để hiển thị mã chuyển khoản chính xác.</p></div>}</div></div>
     {message && <p className="payment-message" role="status">{message}</p>}
-    {payments.length > 0 && <div className="payment-history"><h3>{isAdmin ? "Đối soát thanh toán" : "Đơn của tôi"}</h3>{payments.map((item) => <article key={item.id}><div><strong>{item.orderCode}</strong><span>{item.plan} · {item.amount.toLocaleString("vi-VN")}đ · {new Date(item.createdAt).toLocaleString("vi-VN")}</span>{item.licenseCode && <code>{item.licenseCode}</code>}</div><b data-payment-status={item.status}>{item.status}</b>{isAdmin && item.status === "Chờ xác nhận" && <div className="payment-admin-actions"><button type="button" disabled={busy} onClick={() => adminConfirm(item, "Đã thanh toán")}>Xác nhận tiền vào</button><button type="button" disabled={busy} onClick={() => adminConfirm(item, "Từ chối")}>Từ chối</button></div>}</article>)}</div>}
+    {payments.length > 0 && <div className="payment-history"><h3>{isAdmin ? "Đối soát thanh toán" : "Đơn của tôi"}</h3>{payments.map((item) => <article key={item.id}><div><strong>{item.orderCode}</strong><span>{item.plan} · {item.amount.toLocaleString("vi-VN")}đ · {new Date(item.createdAt).toLocaleString("vi-VN")}</span>{item.licenseCode && <code>{item.licenseCode}</code>}</div><b data-payment-status={item.status}>{paymentStatusLabel(item.status)}</b>{isAdmin && item.status === "Chờ xác nhận" && <div className="payment-admin-actions"><button type="button" disabled={busy} onClick={() => adminConfirm(item, "Đã thanh toán")}>Xác nhận đã nhận tiền</button><button type="button" disabled={busy} onClick={() => adminConfirm(item, "Từ chối")}>Từ chối đơn</button></div>}</article>)}</div>}
   </section>;
 }
