@@ -11,7 +11,7 @@ export default function SystemCheck() {
   async function runChecks() {
     const results: Check[] = [];
     results.push({ label: "Đọc và tải tệp", ok: typeof FileReader !== "undefined" && typeof Blob !== "undefined", note: "Cần để xử lý Word, PDF, Excel ngay trên thiết bị." });
-    results.push({ label: "Lưu cấu hình cục bộ", ok: (() => { try { localStorage.setItem("sy-land-self-test", "1"); localStorage.removeItem("sy-land-self-test"); return true; } catch { return false; } })(), note: "Dùng cho cấu hình địa bàn, tài khoản thử nghiệm và lịch sử." });
+    results.push({ label: "Lưu cấu hình cục bộ", ok: (() => { try { localStorage.setItem("sy-land-self-test", "1"); localStorage.removeItem("sy-land-self-test"); return true; } catch { return false; } })(), note: "Dùng cho cấu hình địa bàn, tài khoản người dùng và lịch sử." });
     results.push({ label: "Kiểm tra SHA-256", ok: Boolean(globalThis.crypto?.subtle), note: "Dùng để xác minh bộ cài tải về." });
     results.push({ label: "Xử lý ảnh và OCR", ok: (() => { try { return Boolean(document.createElement("canvas").getContext("2d")); } catch { return false; } })(), note: "Cần cho PDF scan, ảnh thu nhỏ và chuyển đổi ảnh." });
     results.push({ label: "WebAssembly", ok: typeof WebAssembly !== "undefined", note: "Giúp các thư viện xử lý tài liệu hoạt động ổn định." });

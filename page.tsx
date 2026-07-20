@@ -297,7 +297,7 @@ export default function Home() {
       </section>
 
       <footer className="site-footer">
-        <div className="page-shell"><a className="brand footer-brand" href="#top"><span className="brand-mark" aria-hidden="true"><i /><i /><i /><i /></span><span>SỸ LAND</span></a><p>Tiện ích hỗ trợ làm sạch CSDL đất đai SỸ LAND</p><span>2026 · Bản thử nghiệm công khai</span></div>
+        <div className="page-shell"><a className="brand footer-brand" href="#top"><span className="brand-mark" aria-hidden="true"><i /><i /><i /><i /></span><span>SỸ LAND</span></a><p>Tiện ích hỗ trợ làm sạch CSDL đất đai SỸ LAND</p><span>2026 · Phiên bản chính thức</span></div>
       </footer>
       <ChatAssistant />
     </main>
