@@ -3,6 +3,8 @@
   "latest_version": "11.5.0",
   "release_date": "2026-07-19",
   "download_url": "https://github.com/minhsybk-bit/SY-LAND/releases/download/v11.5.0/SYLAND_Setup_11.5.0.zip",
+  "release_page_url": "https://github.com/minhsybk-bit/SY-LAND/releases/latest",
+  "website_download_url": "https://minhsybk-bit.github.io/SY-LAND/#tai-phan-mem",
   "sha256": "7f97cd693f65b09f37970725b64c5a9a0c751210acbea3a579809030c89836cd",
   "release_notes": [
     "Đồng bộ tài khoản website và phần mềm",
