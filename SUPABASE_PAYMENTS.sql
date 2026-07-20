@@ -24,11 +24,24 @@ create index if not exists payment_orders_user_index on public.payment_orders(us
 create index if not exists payment_orders_status_index on public.payment_orders(status, created_at desc);
 alter table public.payment_orders enable row level security;
 
+-- Nâng cấp từ bản chỉ thanh toán theo tháng sang chu kỳ 1/6/12 tháng.
+alter table public.payment_orders drop constraint if exists payment_orders_amount_check;
+alter table public.payment_orders drop constraint if exists payment_orders_duration_months_check;
+alter table public.payment_orders add constraint payment_orders_duration_months_check
+  check (duration_months in (1, 6, 12));
+alter table public.payment_orders add constraint payment_orders_amount_check
+  check (amount in (199000, 1074600, 1910400, 1490000, 8046000, 14304000));
+
 create or replace function public.prepare_payment_order() returns trigger language plpgsql security definer set search_path = public as $$
 declare v_name text;
 begin
-  if new.plan = 'Cá nhân' then new.amount := 199000; new.max_devices := 1;
-  elsif new.plan = 'Văn phòng' then new.amount := 1490000; new.max_devices := 5;
+  if new.duration_months not in (1, 6, 12) then raise exception 'Chu kỳ thanh toán không hợp lệ'; end if;
+  if new.plan = 'Cá nhân' then
+    new.max_devices := 1;
+    new.amount := case new.duration_months when 1 then 199000 when 6 then 1074600 when 12 then 1910400 end;
+  elsif new.plan = 'Văn phòng' then
+    new.max_devices := 5;
+    new.amount := case new.duration_months when 1 then 1490000 when 6 then 8046000 when 12 then 14304000 end;
   else raise exception 'Gói thanh toán không hợp lệ'; end if;
   new.user_id := auth.uid(); new.email := lower(coalesce(auth.jwt() ->> 'email', ''));
   select full_name into v_name from public.profiles where id = auth.uid(); new.customer := coalesce(v_name, new.email);
@@ -78,6 +91,34 @@ begin
 end; $$;
 drop trigger if exists issue_paid_license_trigger on public.payment_orders;
 create trigger issue_paid_license_trigger before update on public.payment_orders for each row execute procedure public.issue_paid_license();
+
+-- Điểm vào duy nhất cho thao tác đối soát từ website. Không cho trình duyệt tự
+-- cập nhật trực tiếp trạng thái cuối cùng của đơn.
+create or replace function public.admin_confirm_payment(p_order_id uuid, p_status text)
+returns setof public.payment_orders
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_syland_admin() then
+    raise exception 'Tài khoản hiện tại chưa có quyền quản trị SỸ LAND';
+  end if;
+  if p_status not in ('Đã thanh toán', 'Từ chối') then
+    raise exception 'Trạng thái xác nhận không hợp lệ';
+  end if;
+  return query
+    update public.payment_orders
+    set status = p_status
+    where id = p_order_id and status = 'Chờ xác nhận'
+    returning *;
+  if not found then
+    raise exception 'Không tìm thấy đơn đang chờ xác nhận hoặc đơn đã được xử lý';
+  end if;
+end;
+$$;
+revoke all on function public.admin_confirm_payment(uuid, text) from public;
+grant execute on function public.admin_confirm_payment(uuid, text) to authenticated;
 
 create or replace function public.audit_payment_change() returns trigger language plpgsql security definer set search_path = public as $$
 begin
