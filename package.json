@@ -3,18 +3,23 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "scripts": { "build": "vite build --config vite.pages.config.ts" },
+  "scripts": {
+    "build": "vite build --config vite.pages.config.ts"
+  },
   "dependencies": {
+    "@tailwindcss/postcss": "4.2.1",
     "@vitejs/plugin-react": "6.0.2",
+    "docx-preview": "^0.4.0",
     "fflate": "^0.8.3",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.1",
     "mammoth": "^1.12.0",
-    "pdfjs-dist": "^6.1.200",
     "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.1.200",
     "react": "19.2.6",
     "react-dom": "19.2.6",
-    "tesseract.js": "^7.0.0",
     "tailwindcss": "4.2.1",
-    "@tailwindcss/postcss": "4.2.1",
+    "tesseract.js": "^7.0.0",
     "vite": "8.0.13",
     "xlsx": "^0.18.5"
   }
