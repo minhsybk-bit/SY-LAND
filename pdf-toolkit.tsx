@@ -2,7 +2,7 @@
 
 import { ChangeEvent, useMemo, useRef, useState } from "react";
 
-type Mode = "split" | "merge" | "rotate" | "organize" | "resize" | "annotate" | "optimize" | "compare" | "sanitize" | "ocr" | "compress" | "dedupe" | "toimage" | "imagetopdf" | "crop" | "batch";
+type Mode = "split" | "merge" | "rotate" | "organize" | "resize" | "annotate" | "optimize" | "compare" | "sanitize" | "ocr" | "compress" | "dedupe" | "toimage" | "imagetopdf" | "wordtopdf" | "crop" | "batch";
 type PagePreview = {
   page: number;
   image: string;
@@ -96,14 +96,17 @@ export default function PdfToolkit() {
   const [imagePageMode, setImagePageMode] = useState<"a4" | "original">("a4");
   const [cropMargins, setCropMargins] = useState({ top: 0, right: 0, bottom: 0, left: 0 });
   const [batchAction, setBatchAction] = useState<"optimize" | "sanitize" | "rotate">("optimize");
+  const [wordPdfQuality, setWordPdfQuality] = useState<"standard" | "high">("standard");
+  const [wordPreviewing, setWordPreviewing] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0, label: "Sẵn sàng" });
   const [paused, setPaused] = useState(false);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
+  const wordPreviewRef = useRef<HTMLDivElement>(null);
   const imagePreviewUrls = useRef<string[]>([]);
   const taskControl = useRef({ cancelled: false, paused: false });
   const totalSize = useMemo(() => files.reduce((sum, file) => sum + file.size, 0), [files]);
-  const toolName = useMemo(() => ({ split: "Tách và xuất trang", merge: "Nối PDF", rotate: "Xoay PDF", organize: "Sắp xếp và xóa trang", resize: "Chuyển sang A4", annotate: "Số trang và dấu bản quyền", optimize: "Tối ưu PDF", compare: "So sánh PDF", sanitize: "Làm sạch metadata", ocr: "OCR PDF scan", compress: "Nén ảnh PDF", dedupe: "Tìm trang trùng", toimage: "PDF sang ảnh", imagetopdf: "Ảnh sang PDF", crop: "Cắt lề PDF", batch: "Xử lý PDF hàng loạt" }[mode]), [mode]);
+  const toolName = useMemo(() => ({ split: "Tách và xuất trang", merge: "Nối PDF", rotate: "Xoay PDF", organize: "Sắp xếp và xóa trang", resize: "Chuyển sang A4", annotate: "Số trang và dấu bản quyền", optimize: "Tối ưu PDF", compare: "So sánh PDF", sanitize: "Làm sạch metadata", ocr: "OCR PDF scan", compress: "Nén ảnh PDF", dedupe: "Tìm trang trùng", toimage: "PDF sang ảnh", imagetopdf: "Ảnh sang PDF", wordtopdf: "Word sang PDF hàng loạt", crop: "Cắt lề PDF", batch: "Xử lý PDF hàng loạt" }[mode]), [mode]);
 
   function toolVisible(category: Exclude<ToolCategory, "all">, keywords: string) {
     const query = toolSearch.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
@@ -194,16 +197,50 @@ export default function PdfToolkit() {
     } finally { if (!taskControl.current.cancelled) setProgress((current) => ({ ...current, current: current.total, label: current.current < current.total ? "Hoàn tất tác vụ" : current.label })); setBusy(false); }
   }
 
+  async function renderWordPreview(file: File) {
+    if (!wordPreviewRef.current) return;
+    setWordPreviewing(true);
+    setNotice("Đang dựng bản xem trước DOCX đầu tiên ngay trên thiết bị…");
+    try {
+      const { renderAsync } = await import("docx-preview");
+      wordPreviewRef.current.innerHTML = "";
+      await renderAsync(await file.arrayBuffer(), wordPreviewRef.current, wordPreviewRef.current, {
+        className: "syland-docx",
+        inWrapper: true,
+        ignoreWidth: false,
+        ignoreHeight: false,
+        breakPages: true,
+        renderHeaders: true,
+        renderFooters: true,
+        renderFootnotes: true,
+        useBase64URL: true,
+      });
+      setNotice("Đã tạo bản xem trước tệp đầu tiên. Hãy kiểm tra bố cục trước khi chuyển đổi.");
+    } catch (reason) {
+      console.error(reason);
+      wordPreviewRef.current.innerHTML = "";
+      setNotice("Không dựng được bản xem trước DOCX. Tệp có thể bị khóa, hỏng hoặc chứa thành phần chưa được hỗ trợ.");
+    } finally {
+      setWordPreviewing(false);
+    }
+  }
+
   async function chooseFiles(event: ChangeEvent<HTMLInputElement>) {
-    const selected = Array.from(event.target.files || []).filter((file) => mode === "imagetopdf" ? /image\/(jpeg|png|webp)/i.test(file.type) || /\.(jpe?g|png|webp)$/i.test(file.name) : file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf"));
+    const selected = Array.from(event.target.files || []).filter((file) =>
+      mode === "imagetopdf"
+        ? /image\/(jpeg|png|webp)/i.test(file.type) || /\.(jpe?g|png|webp)$/i.test(file.name)
+        : mode === "wordtopdf"
+          ? file.name.toLowerCase().endsWith(".docx") || file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          : file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf"));
     imagePreviewUrls.current.forEach((url) => URL.revokeObjectURL(url)); imagePreviewUrls.current = [];
     setDuplicateGroups([]); setDuplicateScanned(false); setCompareResult(null);
-    const accepted = mode === "merge" ? selected.slice(0, 30) : mode === "imagetopdf" ? selected.slice(0, 50) : mode === "batch" ? selected.slice(0, 20) : mode === "compare" ? selected.slice(0, 2) : selected.slice(0, 1);
+    const accepted = mode === "merge" ? selected.slice(0, 30) : mode === "imagetopdf" ? selected.slice(0, 50) : mode === "wordtopdf" || mode === "batch" ? selected.slice(0, 20) : mode === "compare" ? selected.slice(0, 2) : selected.slice(0, 1);
     setFiles(accepted);
     if (mode === "imagetopdf") { imagePreviewUrls.current = accepted.slice(0, 12).map((file) => URL.createObjectURL(file)); setImagePreviews([...imagePreviewUrls.current]); } else setImagePreviews([]);
-    setNotice(selected.length ? "" : "Hãy chọn tệp PDF hợp lệ.");
+    setNotice(selected.length ? "" : mode === "wordtopdf" ? "Hãy chọn tệp Word định dạng DOCX hợp lệ." : "Hãy chọn tệp PDF hợp lệ.");
     event.target.value = "";
-    if (mode !== "imagetopdf" && accepted[0]) await renderPreviews(accepted[0]);
+    if (mode === "wordtopdf" && accepted[0]) await renderWordPreview(accepted[0]);
+    else if (mode !== "imagetopdf" && accepted[0]) await renderPreviews(accepted[0]);
   }
 
   function move(index: number, direction: -1 | 1) {
@@ -216,7 +253,7 @@ export default function PdfToolkit() {
     });
   }
 
-  function changeMode(next: Mode) { taskControl.current.cancelled = true; imagePreviewUrls.current.forEach((url) => URL.revokeObjectURL(url)); imagePreviewUrls.current = []; setImagePreviews([]); setMode(next); setFiles([]); setPreviews([]); setInspectedPage(null); setRemovedPages(new Set()); setSelectedPages(new Set()); setCompareResult(null); setDuplicateGroups([]); setDuplicateScanned(false); setProgress({ current: 0, total: 0, label: "Sẵn sàng" }); setPaused(false); setNotice(""); }
+  function changeMode(next: Mode) { taskControl.current.cancelled = true; imagePreviewUrls.current.forEach((url) => URL.revokeObjectURL(url)); imagePreviewUrls.current = []; setImagePreviews([]); if (wordPreviewRef.current) wordPreviewRef.current.innerHTML = ""; setMode(next); setFiles([]); setPreviews([]); setInspectedPage(null); setRemovedPages(new Set()); setSelectedPages(new Set()); setCompareResult(null); setDuplicateGroups([]); setDuplicateScanned(false); setProgress({ current: 0, total: 0, label: "Sẵn sàng" }); setPaused(false); setNotice(""); }
 
   function movePage(index: number, direction: -1 | 1) { setPreviews((current) => { const target = index + direction; if (target < 0 || target >= current.length) return current; const next = [...current]; [next[index], next[target]] = [next[target], next[index]]; return next; }); }
   function toggleRemoved(page: number) { setRemovedPages((current) => { const next = new Set(current); if (next.has(page)) next.delete(page); else next.add(page); return next; }); }
@@ -263,7 +300,7 @@ export default function PdfToolkit() {
   }
 
   async function run() {
-    if (!files.length) { setNotice("Hãy chọn tệp PDF trước khi xử lý."); return; }
+    if (!files.length) { setNotice(mode === "wordtopdf" ? "Hãy chọn tệp DOCX trước khi xử lý." : "Hãy chọn tệp PDF trước khi xử lý."); return; }
     taskControl.current = { cancelled: false, paused: false }; setPaused(false);
     setBusy(true); setProgress({ current: 0, total: 1, label: "Đang chuẩn bị tác vụ…" }); setNotice("Đang xử lý trên thiết bị…");
     try {
@@ -375,6 +412,89 @@ export default function PdfToolkit() {
         }
         downloadBlob(zipSync(archive, { level: 0 }), `${baseName(files[0].name)}_${imageFormat.toUpperCase()}.zip`, "application/zip");
         setNotice(`Đã xuất ${pages.length} trang thành ${imageFormat.toUpperCase()} và đóng gói ZIP.`);
+        return;
+      }
+      if (mode === "wordtopdf") {
+        const [{ renderAsync }, html2canvasModule, jspdfModule, { zipSync, strToU8 }] = await Promise.all([
+          import("docx-preview"),
+          import("html2canvas"),
+          import("jspdf"),
+          import("fflate"),
+        ]);
+        const html2canvas = html2canvasModule.default;
+        const { jsPDF } = jspdfModule;
+        const archive: Record<string, Uint8Array> = {};
+        const report = ["Tep_Word,So_trang,Dung_luong_goc,Dung_luong_PDF,Trang_thai,Ghi_chu"];
+        const renderHost = document.createElement("div");
+        renderHost.className = "word-pdf-render-host";
+        document.body.appendChild(renderHost);
+        let success = 0;
+        try {
+          for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
+            await checkpoint();
+            const file = files[fileIndex];
+            setNotice(`Đang chuyển ${fileIndex + 1}/${files.length}: ${file.name}`);
+            setProgress({ current: fileIndex, total: files.length, label: `Đang dựng ${file.name}` });
+            try {
+              renderHost.innerHTML = "";
+              await renderAsync(await file.arrayBuffer(), renderHost, renderHost, {
+                className: "syland-export-docx",
+                inWrapper: true,
+                ignoreWidth: false,
+                ignoreHeight: false,
+                breakPages: true,
+                renderHeaders: true,
+                renderFooters: true,
+                renderFootnotes: true,
+                useBase64URL: true,
+              });
+              await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+              const pageNodes = Array.from(renderHost.querySelectorAll<HTMLElement>("section.syland-export-docx"));
+              const pages = pageNodes.length ? pageNodes : Array.from(renderHost.querySelectorAll<HTMLElement>("section.docx"));
+              const outputPages = pages.length ? pages : [renderHost];
+              let pdf: InstanceType<typeof jsPDF> | null = null;
+              for (let pageIndex = 0; pageIndex < outputPages.length; pageIndex++) {
+                await checkpoint();
+                setProgress({
+                  current: fileIndex + pageIndex / Math.max(1, outputPages.length),
+                  total: files.length,
+                  label: `Đang tạo PDF ${fileIndex + 1}/${files.length} · trang ${pageIndex + 1}/${outputPages.length}`,
+                });
+                const canvas = await html2canvas(outputPages[pageIndex], {
+                  scale: wordPdfQuality === "high" ? 2 : 1.45,
+                  backgroundColor: "#ffffff",
+                  useCORS: true,
+                  logging: false,
+                  imageTimeout: 15000,
+                });
+                const orientation = canvas.width > canvas.height ? "landscape" : "portrait";
+                if (!pdf) {
+                  pdf = new jsPDF({ orientation, unit: "px", format: [canvas.width, canvas.height], hotfixes: ["px_scaling"], compress: true });
+                } else {
+                  pdf.addPage([canvas.width, canvas.height], orientation);
+                }
+                pdf.addImage(canvas.toDataURL("image/jpeg", wordPdfQuality === "high" ? .94 : .88), "JPEG", 0, 0, canvas.width, canvas.height, undefined, "FAST");
+                canvas.width = 1; canvas.height = 1;
+              }
+              if (!pdf) throw new Error("Không tìm thấy trang Word để chuyển đổi.");
+              const bytes = new Uint8Array(pdf.output("arraybuffer"));
+              const outputName = `${file.name.replace(/\.docx$/i, "").replace(/[^a-zA-Z0-9À-ỹ_-]+/g, "_")}.pdf`;
+              archive[outputName] = bytes;
+              report.push(`"${file.name.replace(/"/g, '""')}",${outputPages.length},${file.size},${bytes.length},Thành công,`);
+              success++;
+            } catch (reason) {
+              if (reason instanceof Error && reason.message === "SYLAND_TASK_CANCELLED") throw reason;
+              console.error(reason);
+              report.push(`"${file.name.replace(/"/g, '""')}",,${file.size},,Lỗi,"${(reason instanceof Error ? reason.message : "Không chuyển đổi được").replace(/"/g, '""')}"`);
+            }
+          }
+        } finally {
+          renderHost.remove();
+        }
+        archive["SYLAND_NHAT_KY_WORD_SANG_PDF.csv"] = strToU8("\uFEFF" + report.join("\r\n"));
+        downloadBlob(zipSync(archive, { level: 0 }), `SYLAND_WORD_SANG_PDF_${files.length}_TEP.zip`, "application/zip");
+        setProgress({ current: files.length, total: files.length, label: `Hoàn tất ${success}/${files.length} tệp` });
+        setNotice(`Đã chuyển ${success}/${files.length} tệp Word. ZIP gồm các PDF thành công và nhật ký CSV.`);
         return;
       }
       const { PDFDocument, StandardFonts, degrees, rgb } = await import("pdf-lib");
@@ -585,12 +705,13 @@ export default function PdfToolkit() {
           {toolVisible("review", "tìm trang trùng lặp kiểm tra") && <button className={mode === "dedupe" ? "active" : ""} type="button" onClick={() => changeMode("dedupe")}>Tìm trang trùng</button>}
           {toolVisible("convert", "pdf sang ảnh jpg png chuyển đổi") && <button className={mode === "toimage" ? "active" : ""} type="button" onClick={() => changeMode("toimage")}>PDF sang ảnh</button>}
           {toolVisible("convert", "ảnh jpg png sang pdf ghép ảnh chụp") && <button className={mode === "imagetopdf" ? "active" : ""} type="button" onClick={() => changeMode("imagetopdf")}>Ảnh sang PDF</button>}
+          {toolVisible("convert", "word docx sang pdf hàng loạt chuyển đổi văn bản") && <button className={mode === "wordtopdf" ? "active" : ""} type="button" onClick={() => changeMode("wordtopdf")}>Word → PDF hàng loạt</button>}
           {!(["split", "edit", "convert", "review", "optimize"] as const).some((category) => toolVisible(category, category === "split" ? "tách xuất trang chia đều chẵn lẻ khoảng mốc" : category === "edit" ? "nối ghép gộp xoay sắp xếp xóa cắt lề crop số trang dấu bản quyền watermark" : category === "convert" ? "chuyển khổ a3 a4 pdf sang ảnh jpg png webp ảnh sang pdf ghép ảnh chụp" : category === "review" ? "so sánh đối chiếu ocr scan trang trùng" : "tối ưu cấu trúc metadata nén dung lượng xử lý hàng loạt nhật ký")) && <p className="tool-not-found">Không tìm thấy công cụ phù hợp.</p>}
         </div>
         <div className="pdf-tool-body">
           <div className="pdf-pick">
-            <input ref={inputRef} type="file" accept={mode === "imagetopdf" ? "image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" : "application/pdf,.pdf"} multiple={mode === "merge" || mode === "compare" || mode === "imagetopdf" || mode === "batch"} onChange={chooseFiles} />
-            <span aria-hidden="true">{mode === "imagetopdf" ? "IMG" : "PDF"}</span><h3>{mode === "merge" ? "Chọn nhiều PDF theo thứ tự cần nối" : mode === "batch" ? "Chọn nhiều PDF để xử lý hàng loạt" : mode === "imagetopdf" ? "Chọn ảnh JPG/PNG/WebP theo thứ tự" : mode === "compare" ? "Chọn hai phiên bản PDF" : "Chọn một tệp PDF"}</h3><p>{mode === "merge" ? "Tối đa 30 tệp. Có thể di chuyển thứ tự sau khi chọn." : mode === "batch" ? "Tối đa 20 PDF. Kết quả và nhật ký CSV được đóng gói ZIP." : mode === "imagetopdf" ? "Tối đa 50 ảnh. Có thể đổi thứ tự trước khi tạo PDF." : mode === "compare" ? "So sánh nội dung văn bản theo từng trang; không tải tệp lên máy chủ." : "Xử lý cục bộ; khuyến nghị tệp không quá 100 MB."}</p>
+            <input ref={inputRef} type="file" accept={mode === "imagetopdf" ? "image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" : mode === "wordtopdf" ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx" : "application/pdf,.pdf"} multiple={mode === "merge" || mode === "compare" || mode === "imagetopdf" || mode === "wordtopdf" || mode === "batch"} onChange={chooseFiles} />
+            <span aria-hidden="true">{mode === "imagetopdf" ? "IMG" : mode === "wordtopdf" ? "DOCX" : "PDF"}</span><h3>{mode === "merge" ? "Chọn nhiều PDF theo thứ tự cần nối" : mode === "batch" ? "Chọn nhiều PDF để xử lý hàng loạt" : mode === "wordtopdf" ? "Chọn nhiều tệp Word DOCX" : mode === "imagetopdf" ? "Chọn ảnh JPG/PNG/WebP theo thứ tự" : mode === "compare" ? "Chọn hai phiên bản PDF" : "Chọn một tệp PDF"}</h3><p>{mode === "merge" ? "Tối đa 30 tệp. Có thể di chuyển thứ tự sau khi chọn." : mode === "batch" ? "Tối đa 20 PDF. Kết quả và nhật ký CSV được đóng gói ZIP." : mode === "wordtopdf" ? "Tối đa 20 DOCX. Chuyển cục bộ, không tải tài liệu lên máy chủ." : mode === "imagetopdf" ? "Tối đa 50 ảnh. Có thể đổi thứ tự trước khi tạo PDF." : mode === "compare" ? "So sánh nội dung văn bản theo từng trang; không tải tệp lên máy chủ." : "Xử lý cục bộ; khuyến nghị tệp không quá 100 MB."}</p>
             <button type="button" onClick={() => inputRef.current?.click()}>{mode === "imagetopdf" ? "Chọn ảnh từ thiết bị" : "Chọn PDF từ thiết bị"}</button>
           </div>
           <div className="pdf-options">
@@ -612,10 +733,11 @@ export default function PdfToolkit() {
             {mode === "dedupe" && <div className="dedupe-panel"><div className="optimize-info"><span>≡</span><div><h3>Phát hiện trang giống hệt nhau</h3><p>Tạo ảnh kiểm tra cục bộ rồi so sánh SHA-256 của từng trang. Chỉ đánh dấu khi hình ảnh trang khớp hoàn toàn ở cùng độ phân giải kiểm tra.</p><ul><li>Giữ trang xuất hiện đầu tiên</li><li>Không tự xóa trước khi người dùng xác nhận tải</li><li>Tối đa 150 trang mỗi lượt</li></ul></div></div>{duplicateScanned && <div className="duplicate-results">{duplicateGroups.length ? duplicateGroups.map((group, index) => <p key={group.join("-")}><b>Nhóm {index + 1}</b><span>Giữ trang {group[0]}</span><span>Đề xuất bỏ: {group.slice(1).join(", ")}</span></p>) : <p className="no-duplicate"><b>Không có trang trùng</b><span>Không phát hiện trang có hình ảnh giống hệt nhau.</span></p>}</div>}</div>}
             {mode === "toimage" && <><h3>Xuất trang PDF thành ảnh</h3><div className="image-export-options"><div><b>Định dạng</b><label><input type="radio" checked={imageFormat === "jpg"} onChange={() => setImageFormat("jpg")} /> JPG</label><label><input type="radio" checked={imageFormat === "png"} onChange={() => setImageFormat("png")} /> PNG</label></div><div><b>Độ phân giải</b>{([{ key: "screen", label: "Xem nhanh" }, { key: "standard", label: "Tiêu chuẩn" }, { key: "high", label: "Rõ nét" }] as const).map((item) => <label key={item.key}><input type="radio" checked={imageResolution === item.key} onChange={() => setImageResolution(item.key)} /> {item.label}</label>)}</div></div><label className="range-input">Trang cần xuất<input value={imageRanges} onChange={(event) => setImageRanges(event.target.value)} placeholder="Ví dụ: 1-3, 5, 8-10" /><small>Tối đa 80 trang mỗi lượt. PNG rõ hơn nhưng thường có dung lượng lớn hơn JPG.</small></label></>}
             {mode === "imagetopdf" && <><h3>Sắp xếp ảnh và chọn khổ trang</h3><div className="image-page-mode"><label><input type="radio" checked={imagePageMode === "a4"} onChange={() => setImagePageMode("a4")} /><span><b>Căn vừa A4</b><small>Tự nhận hướng dọc/ngang, có lề an toàn</small></span></label><label><input type="radio" checked={imagePageMode === "original"} onChange={() => setImagePageMode("original")} /><span><b>Theo tỷ lệ ảnh</b><small>Giữ toàn bộ ảnh, không thêm lề A4</small></span></label></div><div className="merge-list image-merge-list">{files.length ? files.map((file, index) => <div key={`${file.name}-${file.lastModified}`}><span>{index + 1}</span><p><b>{file.name}</b><small>{(file.size / 1024 / 1024).toFixed(1)} MB</small></p><button type="button" onClick={() => move(index, -1)} disabled={index === 0}>↑</button><button type="button" onClick={() => move(index, 1)} disabled={index === files.length - 1}>↓</button><button type="button" onClick={() => setFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))}>×</button></div>) : <p className="pdf-empty">Chưa chọn ảnh.</p>}</div></>}
+            {mode === "wordtopdf" && <div className="word-pdf-tool"><div className="pdf-quality-workflow"><ol><li><b>1. Chọn DOCX</b><span>Tối đa 20 tệp mỗi lượt</span></li><li><b>2. Xem trước</b><span>Kiểm tra tệp đầu tiên và bố cục</span></li><li><b>3. Chuyển tuần tự</b><span>Có tiến độ, tạm dừng và hủy</span></li><li><b>4. Tải ZIP</b><span>PDF và nhật ký CSV</span></li></ol></div><h3>Chất lượng PDF</h3><div className="word-pdf-quality"><label><input type="radio" checked={wordPdfQuality === "standard"} onChange={() => setWordPdfQuality("standard")} /><span><b>Tiêu chuẩn</b><small>Nhanh hơn, phù hợp văn bản thông thường</small></span></label><label><input type="radio" checked={wordPdfQuality === "high"} onChange={() => setWordPdfQuality("high")} /><span><b>Rõ nét</b><small>Chữ và hình rõ hơn, xử lý lâu hơn</small></span></label></div><div className="merge-list word-pdf-list">{files.length ? files.map((file, index) => <div key={`${file.name}-${file.lastModified}`}><span>{index + 1}</span><p><b>{file.name}</b><small>{(file.size / 1024 / 1024).toFixed(1)} MB</small></p><button type="button" disabled={busy || wordPreviewing} onClick={() => { setFiles((current) => current.filter((_, itemIndex) => itemIndex !== index)); if (index === 0 && wordPreviewRef.current) wordPreviewRef.current.innerHTML = ""; }}>×</button></div>) : <p className="pdf-empty">Chưa chọn tệp DOCX.</p>}</div><section className="word-pdf-preview"><header><div><b>Xem trước tệp Word đầu tiên</b><small>{files[0]?.name || "Chọn DOCX để xem bố cục trước khi chuyển"}</small></div>{files[0] && <button type="button" disabled={wordPreviewing || busy} onClick={() => void renderWordPreview(files[0])}>{wordPreviewing ? "Đang dựng…" : "Xem lại"}</button>}</header><div ref={wordPreviewRef} className="word-preview-surface" /></section><p className="compression-warning"><b>Lưu ý:</b> Tệp DOCX được dựng lại bằng trình duyệt. Font chưa cài, macro, theo dõi thay đổi, biểu đồ hoặc bố cục Word phức tạp có thể khác bản gốc; hãy kiểm tra bản xem trước và PDF kết quả trước khi phát hành.</p><p className="batch-log-note">Mỗi DOCX tạo một PDF. ZIP kèm SYLAND_NHAT_KY_WORD_SANG_PDF.csv để đối chiếu tệp thành công và tệp lỗi.</p></div>}
             {mode === "batch" && <><h3>Xử lý đồng loạt tối đa 20 PDF</h3><div className="batch-pdf-actions"><label><input type="radio" checked={batchAction === "optimize"} onChange={() => setBatchAction("optimize")} /><span><b>Tối ưu cấu trúc</b><small>Giữ nguyên chất lượng ảnh</small></span></label><label><input type="radio" checked={batchAction === "sanitize"} onChange={() => setBatchAction("sanitize")} /><span><b>Làm sạch metadata</b><small>Xóa tác giả, tiêu đề và từ khóa</small></span></label><label><input type="radio" checked={batchAction === "rotate"} onChange={() => setBatchAction("rotate")} /><span><b>Xoay đồng loạt</b><small>Dùng góc xoay bên dưới</small></span></label></div>{batchAction === "rotate" && <div className="angle-options batch-angle-options">{[90, 180, 270].map((value) => <button className={angle === value ? "active" : ""} type="button" key={value} onClick={() => setAngle(value)}>↻ {value}°</button>)}</div>}<div className="merge-list batch-pdf-list">{files.length ? files.map((file, index) => <div key={`${file.name}-${file.lastModified}`}><span>{index + 1}</span><p><b>{file.name}</b><small>{(file.size / 1024 / 1024).toFixed(1)} MB</small></p><button type="button" onClick={() => setFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))}>×</button></div>) : <p className="pdf-empty">Chưa chọn PDF.</p>}</div><p className="batch-log-note">ZIP luôn kèm SYLAND_NHAT_KY_XU_LY.csv, ghi tệp thành công, tệp lỗi, số trang và dung lượng trước/sau.</p></>}
-            {mode !== "merge" && mode !== "imagetopdf" && mode !== "batch" && mode !== "organize" && mode !== "compare" && files[0] && <div className="single-pdf"><span>✓</span><p><b>{files[0].name}</b><small>{(files[0].size / 1024 / 1024).toFixed(1)} MB</small></p><button type="button" onClick={() => setFiles([])}>×</button></div>}
+            {mode !== "merge" && mode !== "imagetopdf" && mode !== "wordtopdf" && mode !== "batch" && mode !== "organize" && mode !== "compare" && files[0] && <div className="single-pdf"><span>✓</span><p><b>{files[0].name}</b><small>{(files[0].size / 1024 / 1024).toFixed(1)} MB</small></p><button type="button" onClick={() => setFiles([])}>×</button></div>}
             {progress.total > 0 && <div className="pdf-task-progress" role="status" aria-live="polite"><div><span style={{ width: `${Math.min(100, Math.round(progress.current / progress.total * 100))}%` }} /></div><p>{progress.label} · {Math.min(100, Math.round(progress.current / progress.total * 100))}%</p></div>}
-            <div className="pdf-run"><p className={notice.includes("Không") ? "error" : ""}>{notice || (files.length ? `${files.length} tệp · ${(totalSize / 1024 / 1024).toFixed(1)} MB` : "Kết quả sẽ được tải về thiết bị.")}</p><div className="pdf-run-actions">{busy && <><button className="secondary-pdf-action" type="button" onClick={togglePause}>{paused ? "Tiếp tục" : "Tạm dừng"}</button><button className="danger-pdf-action" type="button" onClick={cancelTask}>Hủy tác vụ</button></>}{mode === "compare" && compareResult && <button className="secondary-pdf-action" type="button" onClick={() => { const rows = ["Trang,Ty_le_tuong_dong,Phan_loai,Ghi_chu", ...compareResult.details.map((item) => `${item.page},${item.similarity === null ? "" : item.similarity + "%"},${item.status},\"${item.note.replace(/\"/g, '\"\"')}\"`)]; rows.unshift(`Tep_B,\"${files[1].name.replace(/\"/g, '\"\"')}\"`, `Tep_A,\"${files[0].name.replace(/\"/g, '\"\"')}\"`); downloadText("\uFEFF" + rows.join("\r\n"), `SYLAND_BAO_CAO_SO_SANH_${Date.now()}.csv`, "text/csv;charset=utf-8"); }}>Tải báo cáo CSV</button>}{mode === "dedupe" && duplicateGroups.length > 0 && <button className="secondary-pdf-action" type="button" onClick={() => { void (async () => { setBusy(true); try { const { PDFDocument } = await import("pdf-lib"); const source = await PDFDocument.load(await files[0].arrayBuffer(), { ignoreEncryption: false }); const remove = new Set(duplicateGroups.flatMap((group) => group.slice(1))); const keep = source.getPageIndices().filter((index) => !remove.has(index + 1)); const output = await PDFDocument.create(); (await output.copyPages(source, keep)).forEach((page) => output.addPage(page)); downloadBlob(await output.save({ useObjectStreams: true }), `${baseName(files[0].name)}_BO_TRANG_TRUNG.pdf`); setNotice(`Đã tạo PDF mới gồm ${keep.length} trang, loại ${remove.size} trang lặp. Tệp gốc không thay đổi.`); } catch (reason) { console.error(reason); setNotice("Không tạo được PDF đã loại trang trùng."); } finally { setBusy(false); } })(); }}>Tải PDF đã loại trùng</button>}<button type="button" disabled={busy || !files.length || (mode === "compare" && files.length !== 2) || (mode === "organize" && !previews.length)} onClick={() => void run()}>{busy ? "Đang xử lý…" : mode === "merge" ? "Nối PDF" : mode === "rotate" ? "Xoay và tải PDF" : mode === "organize" ? `Xuất PDF mới · xóa ${removedPages.size} trang` : mode === "resize" ? "Chuyển và tải PDF A4" : mode === "annotate" ? "Thêm dấu và tải PDF" : mode === "optimize" ? "Tối ưu và tải PDF" : mode === "compare" ? "So sánh hai PDF" : mode === "sanitize" ? "Làm sạch và tải PDF" : mode === "ocr" ? "OCR và tải TXT" : mode === "compress" ? "Nén và tải PDF" : mode === "dedupe" ? "Quét trang trùng" : mode === "toimage" ? "Xuất ảnh và tải ZIP" : mode === "imagetopdf" ? "Ghép ảnh và tải PDF" : mode === "crop" ? "Cắt lề và tải PDF" : mode === "batch" ? "Xử lý và tải ZIP" : "Tách và tải kết quả"}</button></div></div>
+            <div className="pdf-run"><p className={notice.includes("Không") ? "error" : ""}>{notice || (files.length ? `${files.length} tệp · ${(totalSize / 1024 / 1024).toFixed(1)} MB` : "Kết quả sẽ được tải về thiết bị.")}</p><div className="pdf-run-actions">{busy && <><button className="secondary-pdf-action" type="button" onClick={togglePause}>{paused ? "Tiếp tục" : "Tạm dừng"}</button><button className="danger-pdf-action" type="button" onClick={cancelTask}>Hủy tác vụ</button></>}{mode === "compare" && compareResult && <button className="secondary-pdf-action" type="button" onClick={() => { const rows = ["Trang,Ty_le_tuong_dong,Phan_loai,Ghi_chu", ...compareResult.details.map((item) => `${item.page},${item.similarity === null ? "" : item.similarity + "%"},${item.status},\"${item.note.replace(/\"/g, '\"\"')}\"`)]; rows.unshift(`Tep_B,\"${files[1].name.replace(/\"/g, '\"\"')}\"`, `Tep_A,\"${files[0].name.replace(/\"/g, '\"\"')}\"`); downloadText("\uFEFF" + rows.join("\r\n"), `SYLAND_BAO_CAO_SO_SANH_${Date.now()}.csv`, "text/csv;charset=utf-8"); }}>Tải báo cáo CSV</button>}{mode === "dedupe" && duplicateGroups.length > 0 && <button className="secondary-pdf-action" type="button" onClick={() => { void (async () => { setBusy(true); try { const { PDFDocument } = await import("pdf-lib"); const source = await PDFDocument.load(await files[0].arrayBuffer(), { ignoreEncryption: false }); const remove = new Set(duplicateGroups.flatMap((group) => group.slice(1))); const keep = source.getPageIndices().filter((index) => !remove.has(index + 1)); const output = await PDFDocument.create(); (await output.copyPages(source, keep)).forEach((page) => output.addPage(page)); downloadBlob(await output.save({ useObjectStreams: true }), `${baseName(files[0].name)}_BO_TRANG_TRUNG.pdf`); setNotice(`Đã tạo PDF mới gồm ${keep.length} trang, loại ${remove.size} trang lặp. Tệp gốc không thay đổi.`); } catch (reason) { console.error(reason); setNotice("Không tạo được PDF đã loại trang trùng."); } finally { setBusy(false); } })(); }}>Tải PDF đã loại trùng</button>}<button type="button" disabled={busy || !files.length || (mode === "compare" && files.length !== 2) || (mode === "organize" && !previews.length)} onClick={() => void run()}>{busy ? "Đang xử lý…" : mode === "merge" ? "Nối PDF" : mode === "rotate" ? "Xoay và tải PDF" : mode === "organize" ? `Xuất PDF mới · xóa ${removedPages.size} trang` : mode === "resize" ? "Chuyển và tải PDF A4" : mode === "annotate" ? "Thêm dấu và tải PDF" : mode === "optimize" ? "Tối ưu và tải PDF" : mode === "compare" ? "So sánh hai PDF" : mode === "sanitize" ? "Làm sạch và tải PDF" : mode === "ocr" ? "OCR và tải TXT" : mode === "compress" ? "Nén và tải PDF" : mode === "dedupe" ? "Quét trang trùng" : mode === "toimage" ? "Xuất ảnh và tải ZIP" : mode === "imagetopdf" ? "Ghép ảnh và tải PDF" : mode === "wordtopdf" ? "Chuyển Word và tải ZIP" : mode === "crop" ? "Cắt lề và tải PDF" : mode === "batch" ? "Xử lý và tải ZIP" : "Tách và tải kết quả"}</button></div></div>
           </div>
         </div>
       </div>
