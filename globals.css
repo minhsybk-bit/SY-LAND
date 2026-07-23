@@ -404,3 +404,19 @@ h1 span { color: var(--green); }
 .account-quick-actions { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; margin: 17px 0; }.account-quick-actions a { padding: 12px; border: 1px solid #c9cec8; color: var(--ink); background: white; text-align: center; font-size: 10px; font-weight: 850; }.account-quick-actions a:hover { color: white; border-color: var(--green); background: var(--green); }
 @media (max-width: 700px) { .account-shortcut b { display: none; }.account-shortcut { padding: 0 8px; }.user-profile-summary { grid-template-columns: auto 1fr; }.user-profile-summary > a { grid-column: 1 / -1; text-align: center; }.configuration-transfer { grid-template-columns: 1fr; }.configuration-actions { flex-direction: column; }.configuration-actions button { width: 100%; }.account-quick-actions { grid-template-columns: repeat(2,1fr); } }
 .account-portal > .account-message { position: fixed; right: 24px; bottom: 24px; z-index: 1000; max-width: min(420px, calc(100vw - 32px)); padding: 13px 16px; border: 1px solid #9bb4a1; box-shadow: 0 12px 34px rgba(18,55,42,.2); color: #124c39; background: #edf7ef; font-weight: 800; }
+.word-pdf-tool { display: grid; gap: 16px; }
+.word-pdf-quality { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+.word-pdf-quality label { display: flex; align-items: flex-start; gap: 10px; padding: 13px; border: 1px solid #d6ded8; border-radius: 8px; background: white; cursor: pointer; }
+.word-pdf-quality input { margin-top: 3px; accent-color: var(--green); }
+.word-pdf-quality span, .word-pdf-quality small { display: block; }.word-pdf-quality small { margin-top: 4px; color: #65736d; font-size: 9px; }
+.word-pdf-list { max-height: 260px; overflow: auto; }
+.word-pdf-preview { overflow: hidden; border: 1px solid #d4dcd6; border-radius: 9px; background: #eef2ef; }
+.word-pdf-preview > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-bottom: 1px solid #d4dcd6; background: white; }
+.word-pdf-preview > header div, .word-pdf-preview > header small { display: block; }.word-pdf-preview > header small { margin-top: 3px; color: #65736d; }
+.word-pdf-preview > header button { padding: 8px 12px; border: 1px solid var(--green); border-radius: 6px; color: var(--green); background: white; font-weight: 800; }
+.word-preview-surface { min-height: 220px; max-height: 620px; overflow: auto; padding: 20px; }
+.word-preview-surface:empty::before { content: "Bản xem trước DOCX sẽ hiển thị tại đây."; display: grid; place-items: center; min-height: 180px; color: #78847f; }
+.word-preview-surface .docx-wrapper { padding: 18px !important; background: #dfe5e1 !important; }
+.word-preview-surface section.docx { margin: 0 auto 18px !important; box-shadow: 0 3px 18px rgba(18,47,38,.12); }
+.word-pdf-render-host { position: fixed; z-index: -9999; left: -14000px; top: 0; width: 1200px; min-height: 100px; background: white; pointer-events: none; }
+@media (max-width: 720px) { .word-pdf-quality { grid-template-columns: 1fr; }.word-preview-surface { padding: 8px; }.word-preview-surface .docx-wrapper { padding: 8px !important; } }
