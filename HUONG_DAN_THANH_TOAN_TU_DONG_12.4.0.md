@@ -21,19 +21,12 @@
 
 ## Cấu hình ngân hàng bắt buộc
 
-Thông tin đã cấu hình:
+Thông tin nhận tiền không được ghi vào mã nguồn GitHub hoặc biến `VITE_*`.
 
-- Ngân hàng: BIDV.
-- Mã BIN VietQR: `970418`.
-- Số tài khoản: `3950549732`.
-- Chủ tài khoản: `NGUYEN MINH SY`.
-
-Mở `app/payment-config.ts` và điền:
-
-- `bankBin`: mã BIN VietQR của ngân hàng.
-- `bankName`: tên ngân hàng hiển thị.
-- `accountNumber`: số tài khoản nhận tiền.
-- `accountName`: tên chủ tài khoản viết in hoa, không dấu.
+1. Chạy `SUPABASE_PAYMENTS.sql` để tạo bảng bảo mật `payment_settings`.
+2. Đăng nhập website bằng tài khoản admin.
+3. Tại **Chọn gói và thanh toán → Cấu hình nhận tiền bảo mật**, nhập mã BIN VietQR, tên ngân hàng, số tài khoản, tên chủ tài khoản và số hỗ trợ.
+4. Chọn **Lưu an toàn**. Dữ liệu được lưu trong Supabase và chỉ tài khoản đã đăng nhập được phép đọc để thanh toán.
 
 Khi chưa điền đủ, nút tạo QR tự khóa để tránh chuyển nhầm tiền.
 
@@ -41,8 +34,9 @@ Khi chưa điền đủ, nút tạo QR tự khóa để tránh chuyển nhầm t
 
 1. Tải toàn bộ nội dung gói lên thư mục gốc kho GitHub `SY-LAND`, giữ nguyên đường dẫn.
 2. Mở Supabase → **SQL Editor** → **New query**.
-3. Sao chép toàn bộ `supabase/SUPABASE_PAYMENTS.sql` vào SQL Editor và chọn **Run**.
-4. Chờ GitHub Actions triển khai có dấu xanh rồi mở website và nhấn `Ctrl + F5`.
+3. Sao chép toàn bộ `SUPABASE_PAYMENTS.sql` vào SQL Editor và chọn **Run**.
+4. Đăng nhập admin và lưu cấu hình nhận tiền bảo mật.
+5. Chờ GitHub Actions triển khai có dấu xanh rồi mở website và nhấn `Ctrl + F5`.
 
 ## Kiểm thử trước khi nhận tiền thật
 
@@ -59,5 +53,6 @@ Khi chưa điền đủ, nút tạo QR tự khóa để tránh chuyển nhầm t
 - Người dùng không thể sửa số tiền hoặc tự điền mã bản quyền.
 - Đơn đã cấp mã không thể đổi ngược trạng thái.
 - Không đưa khóa `service_role` vào website hoặc phần mềm người dùng.
+- Không đưa số tài khoản nhận tiền vào GitHub. Dữ liệu thanh toán chỉ được lưu trong Supabase.
 
 > Phiên bản này là đối soát có admin xác nhận. Muốn xác nhận hoàn toàn tự động theo biến động số dư cần tích hợp API/webhook chính thức của ngân hàng hoặc cổng thanh toán, không dùng tài khoản Internet Banking cá nhân trong mã website.
