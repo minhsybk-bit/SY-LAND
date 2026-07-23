@@ -1,15 +1,37 @@
-import FileProcessor from "./file-processor";
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import ValueCalculator from "./value-calculator";
 import TrialRequest from "./trial-request";
 import ChatAssistant from "./chat-assistant";
-import SoftwareRelease from "./software-release";
-import PdfToolkit from "./pdf-toolkit";
-import AccountPortal from "./account-portal";
 import SystemCheck from "./system-check";
-import SupportCenter from "./support-center";
-import LegalCenter from "./legal-center";
-import PrivacyCenter from "./privacy-center";
-import PaymentCenter from "./payment-center";
+
+const FileProcessor = lazy(() => import("./file-processor"));
+const PdfToolkit = lazy(() => import("./pdf-toolkit"));
+const SoftwareRelease = lazy(() => import("./software-release"));
+const AccountPortal = lazy(() => import("./account-portal"));
+const SupportCenter = lazy(() => import("./support-center"));
+const LegalCenter = lazy(() => import("./legal-center"));
+const PrivacyCenter = lazy(() => import("./privacy-center"));
+const PaymentCenter = lazy(() => import("./payment-center"));
+
+function DeferredSection({ children, id, label, minHeight = 320 }: { children: ReactNode; id?: string; label: string; minHeight?: number }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const node = ref.current;
+    if (!node || visible) return;
+    if (!("IntersectionObserver" in window)) { setVisible(true); return; }
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) { setVisible(true); observer.disconnect(); }
+    }, { rootMargin: "700px 0px" });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [visible]);
+  return <div ref={ref} id={id} className="deferred-section" style={{ minHeight: visible ? undefined : minHeight }}>
+    {visible
+      ? <Suspense fallback={<div className="section-loading" role="status">Đang mở {label}…</div>}>{children}</Suspense>
+      : <div className="section-loading" role="status">Cuộn tới để mở {label}</div>}
+  </div>;
+}
 
 const features = [
   {
@@ -281,8 +303,8 @@ export default function Home() {
             <div><p className="section-kicker">Công cụ xử lý tệp</p><h2 id="demo-title">Đọc Word, PDF, Excel thật.<br />Kiểm tra trước khi sử dụng.</h2></div>
             <p className="prototype-note live-note"><span aria-hidden="true">●</span> Công cụ đang hoạt động · Xử lý cục bộ</p>
           </div>
-          <FileProcessor />
-          <PdfToolkit />
+          <DeferredSection label="công cụ xử lý tệp" minHeight={420}><FileProcessor /></DeferredSection>
+          <DeferredSection id="cong-cu-pdf" label="bộ công cụ PDF" minHeight={420}><PdfToolkit /></DeferredSection>
 
           <section className="software-capabilities" id="chuc-nang-phan-mem" aria-labelledby="software-capabilities-title">
             <div className="section-heading split-heading">
@@ -299,12 +321,12 @@ export default function Home() {
             <div className="software-principles"><strong>Nguyên tắc phát triển</strong><span>Không tự bịa dữ liệu</span><span>Không ghi đè tệp gốc</span><span>Có tiến độ và nhật ký</span><span>Chuyên viên xác nhận kết quả</span></div>
           </section>
 
-          <SoftwareRelease />
+          <DeferredSection id="tai-phan-mem" label="bản phát hành phần mềm"><SoftwareRelease /></DeferredSection>
           <SystemCheck />
-          <AccountPortal />
-          <SupportCenter />
-          <LegalCenter />
-          <PrivacyCenter />
+          <DeferredSection id="tai-khoan" label="trung tâm tài khoản" minHeight={420}><AccountPortal /></DeferredSection>
+          <DeferredSection id="ho-tro" label="trung tâm hỗ trợ"><SupportCenter /></DeferredSection>
+          <DeferredSection id="phap-ly" label="thông tin pháp lý"><LegalCenter /></DeferredSection>
+          <DeferredSection id="quyen-du-lieu" label="quyền dữ liệu cá nhân"><PrivacyCenter /></DeferredSection>
 
           <section className="pricing" id="goi-dich-vu" aria-labelledby="pricing-title">
             <div className="section-heading split-heading pricing-heading">
@@ -321,7 +343,7 @@ export default function Home() {
                 <a className={`button ${plan.featured ? "button-primary" : "plan-button"}`} href={plan.name === "Đơn vị" ? "#tu-van" : "#thanh-toan"}>{plan.name === "Đơn vị" ? "Nhận báo giá riêng" : "Chọn gói này"}<span aria-hidden="true">→</span></a>
               </article>)}
             </div>
-            <PaymentCenter />
+            <DeferredSection id="thanh-toan" label="thanh toán và mã QR" minHeight={520}><PaymentCenter /></DeferredSection>
             <ValueCalculator />
             <TrialRequest />
             <div className="commercial-roadmap" id="lo-trinh">
