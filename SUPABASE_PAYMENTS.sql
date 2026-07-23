@@ -100,6 +100,7 @@ create table if not exists public.payment_orders (
   updated_at timestamptz not null default now()
 );
 alter table public.payment_orders add column if not exists seat_count integer not null default 1;
+alter table public.payment_orders disable trigger user;
 alter table public.payment_orders drop constraint if exists payment_orders_plan_check;
 alter table public.payment_orders drop constraint if exists payment_orders_amount_check;
 alter table public.payment_orders drop constraint if exists payment_orders_duration_months_check;
@@ -123,6 +124,7 @@ alter table public.payment_orders add constraint payment_orders_amount_check che
 alter table public.payment_orders add constraint payment_orders_duration_months_check check (duration_months in (1, 6, 12));
 alter table public.payment_orders add constraint payment_orders_max_devices_check check (max_devices between 1 and 500);
 alter table public.payment_orders add constraint payment_orders_seat_count_check check (seat_count between 1 and 500);
+alter table public.payment_orders enable trigger user;
 create index if not exists payment_orders_user_index on public.payment_orders(user_id, created_at desc);
 create index if not exists payment_orders_status_index on public.payment_orders(status, created_at desc);
 alter table public.payment_orders enable row level security;
