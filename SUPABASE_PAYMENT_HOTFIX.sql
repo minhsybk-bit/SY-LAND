@@ -22,6 +22,32 @@ drop policy if exists "payment_settings_admin_update" on public.payment_settings
 create policy "payment_settings_admin_update" on public.payment_settings for update to authenticated
 using (public.is_syland_admin()) with check (public.is_syland_admin());
 
+create or replace function public.admin_save_payment_settings(
+  p_bank_bin text, p_bank_name text, p_account_number text,
+  p_account_name text, p_support_phone text default ''
+)
+returns setof public.payment_settings language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null or not public.is_syland_admin() then
+    raise exception 'Tài khoản hiện tại chưa có quyền quản trị SỸ LAND';
+  end if;
+  if coalesce(trim(p_bank_bin), '') !~ '^[0-9]{6}$' then raise exception 'Mã BIN VietQR phải gồm đúng 6 chữ số'; end if;
+  if coalesce(trim(p_account_number), '') !~ '^[0-9]{6,30}$' then raise exception 'Số tài khoản chỉ được chứa từ 6 đến 30 chữ số'; end if;
+  if char_length(coalesce(trim(p_bank_name), '')) < 2 or char_length(coalesce(trim(p_account_name), '')) < 2 then
+    raise exception 'Tên ngân hàng và chủ tài khoản không được để trống';
+  end if;
+  return query insert into public.payment_settings
+    (id, bank_bin, bank_name, account_number, account_name, support_phone, updated_by, updated_at)
+  values ('primary', trim(p_bank_bin), trim(p_bank_name), trim(p_account_number),
+    upper(trim(p_account_name)), left(coalesce(trim(p_support_phone), ''), 30), auth.uid(), now())
+  on conflict (id) do update set bank_bin = excluded.bank_bin, bank_name = excluded.bank_name,
+    account_number = excluded.account_number, account_name = excluded.account_name,
+    support_phone = excluded.support_phone, updated_by = auth.uid(), updated_at = now()
+  returning *;
+end; $$;
+revoke all on function public.admin_save_payment_settings(text, text, text, text, text) from public;
+grant execute on function public.admin_save_payment_settings(text, text, text, text, text) to authenticated;
+
 alter table public.payment_orders add column if not exists seat_count integer not null default 1;
 alter table public.licenses add column if not exists seat_count integer not null default 1;
 alter table public.licenses add column if not exists max_parcels_per_run integer;
