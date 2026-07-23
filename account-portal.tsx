@@ -132,21 +132,25 @@ export default function AccountPortal() {
     setTickets([]);
     let account = accountFromRemoteUser(user);
     try {
-      const profiles = await remoteData(`/profiles?id=eq.${encodeURIComponent(user.id)}&select=id,full_name,email,role,created_at`, accessToken);
+      const [profiles, rows, deviceRows, paymentRows] = await Promise.all([
+        remoteData(`/profiles?id=eq.${encodeURIComponent(user.id)}&select=id,full_name,email,role,created_at`, accessToken),
+        remoteData(`/licenses?select=id,code,customer,email,plan,expires_at,status,created_at,max_devices,seat_count,max_parcels_per_run&order=created_at.desc`, accessToken),
+        remoteData(`/device_activations?select=id,license_id,device_hash,device_name,app_version,status,first_seen_at,last_seen_at&order=last_seen_at.desc`, accessToken),
+        remoteData(`/payment_orders?select=id,order_code,plan,status,license_code,created_at,confirmed_at&order=created_at.desc&limit=200`, accessToken),
+      ]);
       const profile = Array.isArray(profiles) ? profiles[0] : null;
       if (profile) account = { ...account, name: profile.full_name || account.name, email: profile.email || account.email, role: profile.role === "admin" ? "admin" : "user", createdAt: profile.created_at || account.createdAt };
-      const rows = await remoteData(`/licenses?select=id,code,customer,email,plan,expires_at,status,created_at,max_devices,seat_count,max_parcels_per_run&order=created_at.desc`, accessToken);
       if (Array.isArray(rows)) setLicenses(rows.map((item: any) => ({ id: item.id, code: item.code, customer: item.customer, email: item.email, plan: item.plan, expiresAt: item.expires_at, status: item.status, createdAt: item.created_at, maxDevices: item.max_devices, seatCount: item.seat_count, maxParcelsPerRun: item.max_parcels_per_run })));
-      const deviceRows = await remoteData(`/device_activations?select=id,license_id,device_hash,device_name,app_version,status,first_seen_at,last_seen_at&order=last_seen_at.desc`, accessToken);
       if (Array.isArray(deviceRows)) setDevices(deviceRows.map((item: any) => ({ id: item.id, licenseId: item.license_id, deviceHash: item.device_hash, deviceName: item.device_name, appVersion: item.app_version, status: item.status, firstSeenAt: item.first_seen_at, lastSeenAt: item.last_seen_at })));
-      const paymentRows = await remoteData(`/payment_orders?select=id,order_code,plan,status,license_code,created_at,confirmed_at&order=created_at.desc&limit=500`, accessToken);
       if (Array.isArray(paymentRows)) setPaymentNotices(paymentRows.map((item: any) => ({ id: item.id, orderCode: item.order_code, plan: item.plan, status: item.status, licenseCode: item.license_code || "", createdAt: item.created_at, confirmedAt: item.confirmed_at || "" })));
       if (profile?.role === "admin") {
-        const eventRows = await remoteData(`/audit_events?select=id,action,entity_type,entity_id,details,created_at&order=created_at.desc&limit=500`, accessToken);
+        const [eventRows, leadRows, ticketRows] = await Promise.all([
+          remoteData(`/audit_events?select=id,action,entity_type,entity_id,details,created_at&order=created_at.desc&limit=200`, accessToken),
+          remoteData(`/leads?select=id,unit,contact,monthly_volume,people,needs,proposed_plan,note,status,created_at&order=created_at.desc&limit=200`, accessToken),
+          remoteData(`/support_tickets?select=id,ticket_code,title,category,priority,details,status,app_version,created_at&order=created_at.desc&limit=200`, accessToken),
+        ]);
         if (Array.isArray(eventRows)) setAuditEvents(eventRows.map((item: any) => ({ id: item.id, action: item.action, entityType: item.entity_type, entityId: item.entity_id, details: item.details || {}, createdAt: item.created_at })));
-        const leadRows = await remoteData(`/leads?select=id,unit,contact,monthly_volume,people,needs,proposed_plan,note,status,created_at&order=created_at.desc&limit=500`, accessToken);
         if (Array.isArray(leadRows)) setLeads(leadRows.map((item: any) => ({ id: item.id, unit: item.unit, contact: item.contact, monthlyVolume: item.monthly_volume, people: item.people, needs: item.needs || [], proposedPlan: item.proposed_plan, note: item.note || "", status: item.status, createdAt: item.created_at })));
-        const ticketRows = await remoteData(`/support_tickets?select=id,ticket_code,title,category,priority,details,status,app_version,created_at&order=created_at.desc&limit=500`, accessToken);
         if (Array.isArray(ticketRows)) setTickets(ticketRows.map((item: any) => ({ id: item.id, ticketCode: item.ticket_code, title: item.title, category: item.category, priority: item.priority, details: item.details, status: item.status, appVersion: item.app_version, createdAt: item.created_at })));
       }
     } catch (reason) {
@@ -231,10 +235,16 @@ export default function AccountPortal() {
       } catch { /* Giữ dữ liệu hiện tại nếu mạng tạm gián đoạn. */ }
     }
     const onPaymentUpdated = () => void refreshEntitlements();
+    const onVisibilityChange = () => { if (document.visibilityState === "visible") void refreshEntitlements(); };
     window.addEventListener("syland-payment-updated", onPaymentUpdated);
-    const timer = window.setInterval(refreshEntitlements, 30000);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    const timer = window.setInterval(onVisibilityChange, 60000);
     void refreshEntitlements();
-    return () => { window.removeEventListener("syland-payment-updated", onPaymentUpdated); window.clearInterval(timer); };
+    return () => {
+      window.removeEventListener("syland-payment-updated", onPaymentUpdated);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.clearInterval(timer);
+    };
   }, [current, remoteToken]);
 
   function saveAccounts(next: Account[]) { setAccounts(next); localStorage.setItem(ACCOUNT_KEY, JSON.stringify(next)); }
@@ -478,7 +488,7 @@ export default function AccountPortal() {
   }
 
   if (current) return (
-    <section className="account-portal" id="tai-khoan" aria-labelledby="account-title">
+    <section className="account-portal" aria-labelledby="account-title">
       <div className="account-header"><div><p className="section-kicker">Trung tâm tài khoản</p><h2 id="account-title">Xin chào, {current.name}</h2><p>{current.role === "admin" ? `Quản trị viên SỸ LAND · ${REMOTE_AUTH ? "Tài khoản máy chủ" : "Chế độ cục bộ"}` : `Tài khoản SỸ LAND · ${REMOTE_AUTH ? "Đã đồng bộ" : "Chế độ cục bộ"}`}</p>{current.role === "admin" && <div className="admin-full-access"><b>FULL ACCESS</b><span>Không giới hạn gói dịch vụ · toàn quyền kiểm thử và quản trị</span></div>}</div><button type="button" onClick={logout}>Đăng xuất</button></div>
       {current.role !== "admin" && (currentEntitlements.plan === "Go" || currentEntitlements.plan === "Dùng thử") && <section className="account-upgrade-card"><div><span>{currentEntitlements.plan === "Go" ? "GỢI Ý NÂNG CẤP" : "MỞ RỘNG TRẢI NGHIỆM"}</span><h3>{currentEntitlements.plan === "Go" ? "Go phù hợp công việc cơ bản. Plus và Pro mở thêm công cụ chuyên sâu." : "Đăng ký gói để bỏ giới hạn lượt và dung lượng."}</h3><p>Hiện tại: {currentEntitlements.reason}. Plus mở 70% công cụ và 140 tệp/lượt; Pro mở toàn bộ công cụ, OCR/so sánh và 200 tệp/lượt.</p></div><div><button type="button" onClick={() => openUpgrade("plus")}>Xem gói Plus</button><button type="button" onClick={() => openUpgrade("pro")}>Nâng lên Pro</button></div></section>}
       {current.role === "admin" ? <div className="admin-grid">
@@ -500,7 +510,7 @@ export default function AccountPortal() {
   );
 
   return (
-    <section className="account-portal account-auth" id="tai-khoan" aria-labelledby="account-title">
+    <section className="account-portal account-auth" aria-labelledby="account-title">
       <div className="auth-copy"><p className="section-kicker">{REMOTE_AUTH ? "Tài khoản SỸ LAND" : AUTH_CONFIG_ERROR ? "Cần hoàn tất cấu hình" : "Chế độ tài khoản cục bộ"}</p><h2 id="account-title">{mode === "setup" ? "Thiết lập quản trị viên SỸ LAND" : mode === "register" ? "Đăng ký tài khoản SỸ LAND" : mode === "forgot" ? "Khôi phục mật khẩu" : mode === "reset" ? "Đặt mật khẩu mới" : "Đăng nhập SỸ LAND"}</h2><p>{AUTH_CONFIG_ERROR ? "Website chưa nhận được cấu hình máy chủ tài khoản. Đăng ký và đăng nhập tạm khóa để tránh tạo tài khoản không đồng bộ." : REMOTE_AUTH ? "Một tài khoản đăng nhập được trên cả website và phần mềm SỸ LAND." : mode === "setup" ? "Thiết lập mật khẩu quản trị lần đầu cho anh Nguyễn Minh Sỹ trên thiết bị này." : "Chế độ phát triển cục bộ đang hoạt động."}</p><ul><li>✓ Mật khẩu không được ghi trong mã website</li><li>✓ {REMOTE_AUTH ? "Tự khôi phục phiên đăng nhập qua HTTPS" : AUTH_CONFIG_ERROR ? "Cần thêm hai GitHub Actions secrets" : "Chỉ lưu mã băm trên trình duyệt"}</li><li>✓ Có quy trình quên và đặt lại mật khẩu</li></ul></div>
       <form className="auth-form" onSubmit={submitAccount}>
         {REMOTE_AUTH && mode !== "forgot" && mode !== "reset" && mode !== "setup" && <div className="social-auth">
