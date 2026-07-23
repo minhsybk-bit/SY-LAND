@@ -32,6 +32,7 @@ const sourceFiles = readdirSync(root).filter((name) => /\.(tsx|ts|css)$/.test(na
 const source = sourceFiles.map((name) => readFileSync(join(root, name), "utf8")).join("\n");
 const page = readFileSync(join(root, "page.tsx"), "utf8");
 const accountPortal = readFileSync(join(root, "account-portal.tsx"), "utf8");
+const paymentCenter = readFileSync(join(root, "payment-center.tsx"), "utf8");
 for (const id of ["minh-hoa", "cong-cu-pdf", "tai-phan-mem", "tai-khoan", "thanh-toan", "phap-ly"]) {
   assert(page.includes(`id="${id}"`), `Có điểm điều hướng #${id}`);
 }
@@ -41,6 +42,7 @@ assert(!source.includes("@import \"tailwindcss\""), "Không nạp Tailwind khôn
 assert(accountPortal.includes('remoteAuth("/settings"'), "Google OAuth kiểm tra trạng thái nhà cung cấp trước khi chuyển hướng");
 assert(accountPortal.includes("unable to exchange external code"), "Google OAuth giải thích lỗi Client Secret");
 assert(!accountPortal.includes('url.searchParams.set("oauth"'), "OAuth dùng URL callback GitHub Pages chính xác, không thêm query thừa");
+assert(paymentCenter.includes("SUPABASE_REPAIR_AUTH_PAYMENTS.sql"), "Thông báo thanh toán trỏ đúng bản phục hồi hợp nhất");
 
 const browserOutput = assets
   .filter((name) => name.endsWith(".js"))
