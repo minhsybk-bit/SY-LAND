@@ -9,7 +9,7 @@ create table if not exists public.leads (
   monthly_volume integer not null default 1 check (monthly_volume between 1 and 10000000),
   people integer not null default 1 check (people between 1 and 100000),
   needs text[] not null default '{}',
-  proposed_plan text not null check (proposed_plan in ('Cá nhân', 'Văn phòng', 'Đơn vị')),
+  proposed_plan text not null check (proposed_plan in ('Go', 'Plus', 'Pro', 'Cá nhân', 'Văn phòng', 'Đơn vị')),
   note text not null default '' check (char_length(note) <= 5000),
   status text not null default 'Mới' check (status in ('Mới', 'Đang liên hệ', 'Đã chuyển đổi', 'Đã đóng')),
   created_at timestamptz not null default now(),
@@ -65,4 +65,3 @@ $$;
 drop trigger if exists leads_audit_trigger on public.leads;
 create trigger leads_audit_trigger after update on public.leads
 for each row execute procedure public.write_lead_audit();
-

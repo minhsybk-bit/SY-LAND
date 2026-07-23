@@ -18,7 +18,7 @@ export function resolveEntitlements(input: { role?: string; plan?: string; seats
   const role = input.role === "admin" ? "admin" : input.role === "user" ? "user" : "guest";
   const seats = Math.max(1, Math.floor(Number(input.seats) || 1));
   const raw = String(input.plan || "Dùng thử").toLocaleLowerCase("vi-VN");
-  const plan: SylandPlan = raw.includes("văn phòng") ? "Văn phòng" : raw.includes("đơn vị") ? "Đơn vị" : raw.includes("pro") ? "Pro" : raw.includes("plus") ? "Plus" : raw.includes("go") || raw === "cá nhân" ? "Go" : "Dùng thử";
+  const plan: SylandPlan = raw.includes("văn phòng") ? "Văn phòng" : raw.includes("đơn vị") ? "Đơn vị" : raw.includes("pro") ? "Pro" : raw.includes("plus") || raw === "cá nhân" ? "Plus" : raw.includes("go") ? "Go" : "Dùng thử";
   if (role === "admin") return { role, plan: "Đơn vị", seats, featurePercent: 100, maxParcelsPerRun: null, fullTools: true, reason: "Quản trị viên SỸ LAND · không giới hạn" };
 
   let featurePercent = 25, accountLimit: number | null = 50, fullTools = false, reason = "Tài khoản dùng thử";

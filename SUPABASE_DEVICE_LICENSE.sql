@@ -57,7 +57,8 @@ begin
   end if;
 
   if public.is_syland_admin() then
-    return jsonb_build_object('ok', true, 'role', 'admin', 'message', 'Tài khoản quản trị được toàn quyền sử dụng.');
+    return jsonb_build_object('ok', true, 'role', 'admin', 'plan', 'Đơn vị', 'seat_count', 1,
+      'max_parcels_per_run', null, 'full_access', true, 'message', 'Tài khoản quản trị được toàn quyền sử dụng.');
   end if;
 
   select * into v_license
@@ -83,7 +84,10 @@ begin
         app_version = left(coalesce(p_app_version, ''), 40), status = 'Hoạt động', last_seen_at = now()
     where id = v_activation.id;
     return jsonb_build_object('ok', true, 'license_code', v_license.code, 'plan', v_license.plan,
-      'expires_at', v_license.expires_at, 'max_devices', v_license.max_devices, 'device_registered', true);
+      'expires_at', v_license.expires_at, 'max_devices', v_license.max_devices,
+      'seat_count', v_license.seat_count, 'max_parcels_per_run', v_license.max_parcels_per_run,
+      'full_access', (v_license.plan in ('Pro', 'Đơn vị') or (v_license.plan = 'Văn phòng' and v_license.seat_count >= 5)),
+      'device_registered', true);
   end if;
 
   select count(*) into v_active_count
@@ -101,10 +105,12 @@ begin
     (v_license.id, auth.uid(), left(p_device_hash, 128), left(coalesce(p_device_name, 'Windows PC'), 120), left(coalesce(p_app_version, ''), 40));
 
   return jsonb_build_object('ok', true, 'license_code', v_license.code, 'plan', v_license.plan,
-    'expires_at', v_license.expires_at, 'max_devices', v_license.max_devices, 'device_registered', true);
+    'expires_at', v_license.expires_at, 'max_devices', v_license.max_devices,
+    'seat_count', v_license.seat_count, 'max_parcels_per_run', v_license.max_parcels_per_run,
+    'full_access', (v_license.plan in ('Pro', 'Đơn vị') or (v_license.plan = 'Văn phòng' and v_license.seat_count >= 5)),
+    'device_registered', true);
 end;
 $$;
 
 revoke all on function public.activate_syland_device(text, text, text, text) from public;
 grant execute on function public.activate_syland_device(text, text, text, text) to authenticated;
-
