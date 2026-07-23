@@ -58,7 +58,9 @@ begin
 
   if public.is_syland_admin() then
     return jsonb_build_object('ok', true, 'role', 'admin', 'plan', 'Đơn vị', 'seat_count', 1,
-      'max_parcels_per_run', null, 'full_access', true, 'message', 'Tài khoản quản trị được toàn quyền sử dụng.');
+      'feature_percent', 100, 'max_parcels_per_run', null, 'max_file_size_mb', 100,
+      'max_total_upload_mb', 2000, 'max_uses_per_day', null, 'full_access', true,
+      'recommended_upgrade', null, 'message', 'Tài khoản quản trị được toàn quyền sử dụng.');
   end if;
 
   select * into v_license
@@ -86,6 +88,11 @@ begin
     return jsonb_build_object('ok', true, 'license_code', v_license.code, 'plan', v_license.plan,
       'expires_at', v_license.expires_at, 'max_devices', v_license.max_devices,
       'seat_count', v_license.seat_count, 'max_parcels_per_run', v_license.max_parcels_per_run,
+      'feature_percent', case when v_license.plan = 'Go' then 40 when v_license.plan = 'Plus' or (v_license.plan = 'Văn phòng' and v_license.seat_count < 5) then 70 else 100 end,
+      'max_file_size_mb', case when v_license.plan = 'Go' then 20 when v_license.plan = 'Plus' or (v_license.plan = 'Văn phòng' and v_license.seat_count < 5) then 30 when v_license.plan in ('Đơn vị') or (v_license.plan = 'Văn phòng' and v_license.seat_count >= 5) then 100 else 50 end,
+      'max_total_upload_mb', case when v_license.plan = 'Go' then 500 when v_license.plan = 'Plus' or (v_license.plan = 'Văn phòng' and v_license.seat_count < 5) then 750 when v_license.plan in ('Đơn vị') or (v_license.plan = 'Văn phòng' and v_license.seat_count >= 5) then 2000 else 1000 end,
+      'max_uses_per_day', null, 'recommended_upgrade',
+        case when v_license.plan = 'Go' then 'Plus' when v_license.plan = 'Plus' then 'Pro' else null end,
       'full_access', (v_license.plan in ('Pro', 'Đơn vị') or (v_license.plan = 'Văn phòng' and v_license.seat_count >= 5)),
       'device_registered', true);
   end if;
@@ -107,6 +114,11 @@ begin
   return jsonb_build_object('ok', true, 'license_code', v_license.code, 'plan', v_license.plan,
     'expires_at', v_license.expires_at, 'max_devices', v_license.max_devices,
     'seat_count', v_license.seat_count, 'max_parcels_per_run', v_license.max_parcels_per_run,
+    'feature_percent', case when v_license.plan = 'Go' then 40 when v_license.plan = 'Plus' or (v_license.plan = 'Văn phòng' and v_license.seat_count < 5) then 70 else 100 end,
+    'max_file_size_mb', case when v_license.plan = 'Go' then 20 when v_license.plan = 'Plus' or (v_license.plan = 'Văn phòng' and v_license.seat_count < 5) then 30 when v_license.plan in ('Đơn vị') or (v_license.plan = 'Văn phòng' and v_license.seat_count >= 5) then 100 else 50 end,
+    'max_total_upload_mb', case when v_license.plan = 'Go' then 500 when v_license.plan = 'Plus' or (v_license.plan = 'Văn phòng' and v_license.seat_count < 5) then 750 when v_license.plan in ('Đơn vị') or (v_license.plan = 'Văn phòng' and v_license.seat_count >= 5) then 2000 else 1000 end,
+    'max_uses_per_day', null, 'recommended_upgrade',
+      case when v_license.plan = 'Go' then 'Plus' when v_license.plan = 'Plus' then 'Pro' else null end,
     'full_access', (v_license.plan in ('Pro', 'Đơn vị') or (v_license.plan = 'Văn phòng' and v_license.seat_count >= 5)),
     'device_registered', true);
 end;
