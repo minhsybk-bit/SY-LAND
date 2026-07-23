@@ -1,7 +1,7 @@
 "use client";
 
 import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from "react";
-import { useEntitlements } from "./entitlements";
+import { consumeDailyUsage, useEntitlements } from "./entitlements";
 
 type CellValue = string | number | boolean | null;
 
@@ -74,8 +74,8 @@ type LocationProfile = {
 const EMPTY_LOCATION: LocationProfile = { provinceNew: "", provinceOld: "", communeNew: "", communeOld: "", communeCode: "", villageNew: "", villageOld: "", aliases: "" };
 
 const ACCEPTED = ".docx,.pdf,.xlsx,.xls,.csv";
-const MAX_FILE_SIZE = 20 * 1024 * 1024;
-const MAX_BATCH_TOTAL_SIZE = 500 * 1024 * 1024;
+const MAX_FILE_SIZE = 100 * 1024 * 1024;
+const MAX_BATCH_TOTAL_SIZE = 2000 * 1024 * 1024;
 
 function formatBytes(bytes: number) {
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
@@ -498,8 +498,9 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
   async function loadMasterFile(file?: File) {
     if (!file) return;
     setMasterError("");
-    if (file.size > MAX_FILE_SIZE || !/\.(xlsx|xls|csv)$/i.test(file.name)) {
-      setMasterError("File tổng phải là XLSX, XLS hoặc CSV và không vượt quá 20 MB.");
+    const fileLimitBytes = entitlements.maxFileSizeMB * 1024 * 1024;
+    if (file.size > fileLimitBytes || !/\.(xlsx|xls|csv)$/i.test(file.name)) {
+      setMasterError(`File tổng phải là XLSX, XLS hoặc CSV và không vượt quá ${entitlements.maxFileSizeMB} MB.`);
       return;
     }
     try {
@@ -565,19 +566,21 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
     setBatchNotice("");
     const availableSlots = maxBatchFiles == null ? Number.POSITIVE_INFINITY : Math.max(0, maxBatchFiles - items.length);
     const selected = Array.from(fileList).slice(0, availableSlots);
+    const fileLimitBytes = Math.min(MAX_FILE_SIZE, entitlements.maxFileSizeMB * 1024 * 1024);
+    const totalLimitBytes = Math.min(MAX_BATCH_TOTAL_SIZE, entitlements.maxTotalUploadMB * 1024 * 1024);
     const existingKeys = new Set(items.map((item) => `${item.file.name}-${item.file.size}-${item.file.lastModified}`));
     const existingBytes = items.reduce((total, item) => total + item.file.size, 0);
     let acceptedBytes = existingBytes;
     const uniqueFiles = selected.filter((file) => !existingKeys.has(`${file.name}-${file.size}-${file.lastModified}`));
     const capacityFiles = uniqueFiles.filter((file) => {
-      if (acceptedBytes + file.size > MAX_BATCH_TOTAL_SIZE) return false;
+      if (file.size > fileLimitBytes || acceptedBytes + file.size > totalLimitBytes) return false;
       acceptedBytes += file.size;
       return true;
     });
     const next = capacityFiles
       .map<BatchItem>((file, index) => {
         const extension = file.name.split(".").pop()?.toLowerCase() || "";
-        const valid = ["docx", "pdf", "xlsx", "xls", "csv"].includes(extension) && file.size <= MAX_FILE_SIZE;
+        const valid = ["docx", "pdf", "xlsx", "xls", "csv"].includes(extension) && file.size <= fileLimitBytes;
         const fields = extractLandFields("", file.name, locationProfile);
         if (!autoClassify) {
           fields.prefix = batchPrefix;
@@ -588,7 +591,7 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
           file,
           status: valid ? "waiting" : "error",
           fields,
-          message: valid ? "Chờ xử lý" : "Sai định dạng hoặc vượt quá 20 MB",
+          message: valid ? "Chờ xử lý" : `Sai định dạng hoặc vượt quá ${entitlements.maxFileSizeMB} MB`,
         };
       });
     setItems((current) => maxBatchFiles == null ? [...current, ...next] : [...current, ...next].slice(0, maxBatchFiles));
@@ -596,7 +599,7 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
     const omittedCount = Math.max(0, Array.from(fileList).length - selected.length) + (uniqueFiles.length - capacityFiles.length);
     if (omittedCount || duplicateCount) {
       setBatchNotice([
-        omittedCount ? `${omittedCount} tệp chưa được thêm do vượt ${maxBatchFiles == null ? "giới hạn kỹ thuật tổng 500 MB" : `hạn mức ${maxBatchFiles} thửa/lần hoặc tổng 500 MB`}.` : "",
+        omittedCount ? `${omittedCount} tệp chưa được thêm do vượt hạn mức ${maxBatchFiles == null ? "số tệp không giới hạn" : `${maxBatchFiles} tệp/lượt`}, ${entitlements.maxFileSizeMB} MB/tệp hoặc ${entitlements.maxTotalUploadMB} MB/lượt.` : "",
         duplicateCount ? `${duplicateCount} tệp trùng đã được bỏ qua.` : "",
       ].filter(Boolean).join(" "));
     } else {
@@ -655,10 +658,15 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
 
   async function processAll() {
     if (!items.length || running) return;
+    const usage = consumeDailyUsage(entitlements);
+    if (!usage.allowed) {
+      setBatchNotice("Đã hết lượt trải nghiệm hôm nay. Hãy đăng ký/đăng nhập hoặc nâng cấp gói để tiếp tục.");
+      return;
+    }
     setRunning(true);
     stopRequestedRef.current = false;
     const processable = items.filter((item) => item.status !== "error");
-    setBatchProgress({ current: 0, total: processable.length, label: "Đang chuẩn bị…" });
+    setBatchProgress({ current: 0, total: processable.length, label: usage.remaining == null ? "Đang chuẩn bị…" : `Đang chuẩn bị · còn ${usage.remaining} lượt hôm nay` });
     let ocrPdfCount = 0;
     let completedCount = 0;
     for (const item of items) {
@@ -859,7 +867,7 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
   return (
     <section className="batch-shell" id="xu-ly-hang-loat" aria-labelledby="batch-title">
       <div className="batch-heading">
-        <div><span className="demo-label">04 · XỬ LÝ HÀNG LOẠT</span><h3 id="batch-title">Chuẩn hóa nhiều hồ sơ trong một lượt</h3><p>{maxBatchFiles == null ? "Không giới hạn số thửa theo tài khoản" : `Hạn mức ${maxBatchFiles} thửa/lần`}, 20 MB mỗi tệp và 500 MB mỗi lượt. Hệ thống xử lý tuần tự để hạn chế treo trình duyệt.</p><small>{entitlements.reason}</small></div>
+        <div><span className="demo-label">04 · XỬ LÝ HÀNG LOẠT</span><h3 id="batch-title">Chuẩn hóa nhiều hồ sơ trong một lượt</h3><p>{maxBatchFiles == null ? "Không giới hạn số thửa theo tài khoản" : `Hạn mức ${maxBatchFiles} thửa/lần`}, {entitlements.maxFileSizeMB} MB mỗi tệp và {entitlements.maxTotalUploadMB} MB mỗi lượt. Hệ thống xử lý tuần tự để hạn chế treo trình duyệt.</p><small>{entitlements.reason}</small></div>
         <div className="batch-summary"><strong>{items.length}</strong><span>Tệp đã chọn</span><strong>{readyCount}</strong><span>Sẵn sàng tải</span><strong>{maxBatchFiles == null ? "∞" : Math.max(0, maxBatchFiles - items.length)}</strong><span>Còn có thể thêm</span></div>
       </div>
       <div className="batch-toolbar">
@@ -953,6 +961,7 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
 }
 
 export default function FileProcessor() {
+  const entitlements = useEntitlements();
   const inputRef = useRef<HTMLInputElement>(null);
   const locationImportRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -1038,14 +1047,20 @@ export default function FileProcessor() {
       setError("Định dạng chưa được hỗ trợ. Vui lòng chọn DOCX, PDF, XLSX, XLS hoặc CSV.");
       return;
     }
-    if (nextFile.size > MAX_FILE_SIZE) {
+    if (nextFile.size > entitlements.maxFileSizeMB * 1024 * 1024) {
       setStatus("error");
-      setError("Tệp vượt quá 20 MB. Hãy chọn tệp nhỏ hơn để xử lý an toàn trên thiết bị.");
+      setError(`Tệp vượt quá ${entitlements.maxFileSizeMB} MB theo quyền tài khoản hiện tại.`);
+      return;
+    }
+    const usage = consumeDailyUsage(entitlements);
+    if (!usage.allowed) {
+      setStatus("error");
+      setError("Đã hết lượt trải nghiệm hôm nay. Hãy đăng ký/đăng nhập hoặc nâng cấp gói để tiếp tục.");
       return;
     }
 
     setStatus("processing");
-    setProgress({ label: "Đang mở tệp…", percent: 3 });
+    setProgress({ label: usage.remaining == null ? "Đang mở tệp…" : `Đang mở tệp · còn ${usage.remaining} lượt hôm nay`, percent: 3 });
     try {
       let processed: ProcessedResult;
       if (extension === "docx") processed = await processWord(nextFile);

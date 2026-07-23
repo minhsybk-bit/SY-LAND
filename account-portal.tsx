@@ -100,10 +100,21 @@ export default function AccountPortal() {
     const license = licenses.find((item) => item.code === code);
     return license && license.status === "Hoạt động" && new Date(license.expiresAt) >= new Date() ? license : null;
   }, [current, activations, licenses]);
+  const currentEntitlements = useMemo(() => resolveEntitlements({
+    role: current?.role,
+    plan: activeLicense?.plan,
+    seats: activeLicense?.seatCount || activeLicense?.maxDevices || 1,
+    licenseMaxParcels: activeLicense?.maxParcelsPerRun,
+  }), [current, activeLicense]);
 
   useEffect(() => {
-    publishEntitlements(resolveEntitlements({ role: current?.role, plan: activeLicense?.plan, seats: activeLicense?.seatCount || activeLicense?.maxDevices || 1, licenseMaxParcels: activeLicense?.maxParcelsPerRun }));
-  }, [current, activeLicense]);
+    publishEntitlements(currentEntitlements);
+  }, [currentEntitlements]);
+
+  function openUpgrade(plan: "plus" | "pro") {
+    window.dispatchEvent(new CustomEvent("syland-select-plan", { detail: { plan } }));
+    document.getElementById("thanh-toan")?.scrollIntoView({ behavior: "smooth" });
+  }
 
   async function hydrateRemoteAccount(user: any, accessToken: string) {
     let account = accountFromRemoteUser(user);
@@ -396,6 +407,7 @@ export default function AccountPortal() {
   if (current) return (
     <section className="account-portal" id="tai-khoan" aria-labelledby="account-title">
       <div className="account-header"><div><p className="section-kicker">Trung tâm tài khoản</p><h2 id="account-title">Xin chào, {current.name}</h2><p>{current.role === "admin" ? `Quản trị viên SỸ LAND · ${REMOTE_AUTH ? "Tài khoản máy chủ" : "Chế độ cục bộ"}` : `Tài khoản SỸ LAND · ${REMOTE_AUTH ? "Đã đồng bộ" : "Chế độ cục bộ"}`}</p>{current.role === "admin" && <div className="admin-full-access"><b>FULL ACCESS</b><span>Không giới hạn gói dịch vụ · toàn quyền kiểm thử và quản trị</span></div>}</div><button type="button" onClick={logout}>Đăng xuất</button></div>
+      {current.role !== "admin" && (currentEntitlements.plan === "Go" || currentEntitlements.plan === "Dùng thử") && <section className="account-upgrade-card"><div><span>{currentEntitlements.plan === "Go" ? "GỢI Ý NÂNG CẤP" : "MỞ RỘNG TRẢI NGHIỆM"}</span><h3>{currentEntitlements.plan === "Go" ? "Go phù hợp công việc cơ bản. Plus và Pro mở thêm công cụ chuyên sâu." : "Đăng ký gói để bỏ giới hạn lượt và dung lượng."}</h3><p>Hiện tại: {currentEntitlements.reason}. Plus mở 70% công cụ và 140 tệp/lượt; Pro mở toàn bộ công cụ, OCR/so sánh và 200 tệp/lượt.</p></div><div><button type="button" onClick={() => openUpgrade("plus")}>Xem gói Plus</button><button type="button" onClick={() => openUpgrade("pro")}>Nâng lên Pro</button></div></section>}
       {current.role === "admin" ? <div className="admin-grid">
         <aside className="admin-menu"><span>QUẢN TRỊ · FULL ACCESS</span><a href="#minh-hoa">Xử lý Word/PDF/Excel</a><a href="#cong-cu-pdf">Bộ công cụ PDF</a><a href="#chuc-nang-phan-mem">Kiểm tra chức năng</a><a href="#tai-phan-mem">Kiểm tra bản phát hành</a><button type="button" onClick={() => downloadJson(reports, `SYLAND_BAO_CAO_LOI_${new Date().toISOString().slice(0,10)}.json`)} disabled={!reports.length}>Xuất báo cáo lỗi JSON</button><button type="button" onClick={() => downloadJson(licenses, `SYLAND_BAN_QUYEN_${new Date().toISOString().slice(0,10)}.json`)} disabled={!licenses.length}>Xuất bản quyền JSON</button><small>Mở toàn bộ công cụ và không giới hạn số thửa/lần. Tác vụ vẫn chạy tuần tự để bảo vệ bộ nhớ.</small></aside>
         <div className="bug-workspace">

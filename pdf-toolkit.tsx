@@ -1,7 +1,7 @@
 "use client";
 
 import { ChangeEvent, useMemo, useRef, useState } from "react";
-import { EntitlementSnapshot, useEntitlements } from "./entitlements";
+import { consumeDailyUsage, EntitlementSnapshot, useEntitlements } from "./entitlements";
 
 type Mode = "split" | "merge" | "rotate" | "organize" | "resize" | "annotate" | "optimize" | "compare" | "sanitize" | "ocr" | "compress" | "dedupe" | "toimage" | "imagetopdf" | "wordtopdf" | "crop" | "batch";
 type PagePreview = {
@@ -253,10 +253,13 @@ export default function PdfToolkit() {
     const countLimited = mode === "merge" || mode === "imagetopdf" || mode === "wordtopdf" || mode === "batch"
       ? (maxBatchFiles == null ? selected : selected.slice(0, maxBatchFiles))
       : mode === "compare" ? selected.slice(0, 2) : selected.slice(0, 1);
-    const totalLimit = mode === "imagetopdf" ? MAX_IMAGE_TOTAL_BYTES : MAX_BATCH_TOTAL_BYTES;
+    const hardTotalLimit = mode === "imagetopdf" ? MAX_IMAGE_TOTAL_BYTES : MAX_BATCH_TOTAL_BYTES;
+    const totalLimit = Math.min(hardTotalLimit, entitlements.maxTotalUploadMB * 1024 * 1024);
+    const fileLimit = entitlements.maxFileSizeMB * 1024 * 1024;
     const accepted: File[] = [];
     let acceptedBytes = 0;
     for (const file of countLimited) {
+      if (file.size > fileLimit) continue;
       if (acceptedBytes + file.size > totalLimit) break;
       accepted.push(file); acceptedBytes += file.size;
     }
@@ -265,7 +268,7 @@ export default function PdfToolkit() {
     setNotice(!selected.length
       ? mode === "wordtopdf" ? "Hãy chọn tệp Word định dạng DOCX hợp lệ." : "Hãy chọn tệp PDF hợp lệ."
       : accepted.length < selected.length
-        ? `Đã nhận ${accepted.length}/${selected.length} tệp theo quyền tài khoản: ${batchLimitLabel} và ${Math.round(totalLimit / 1024 / 1024)} MB mỗi lượt.`
+        ? `Đã nhận ${accepted.length}/${selected.length} tệp theo quyền tài khoản: ${batchLimitLabel}, ${entitlements.maxFileSizeMB} MB/tệp và ${Math.round(totalLimit / 1024 / 1024)} MB/lượt.`
         : "");
     event.target.value = "";
     if (mode === "wordtopdf" && accepted[0]) await renderWordPreview(accepted[0]);
@@ -340,8 +343,13 @@ export default function PdfToolkit() {
       return;
     }
     if (!files.length) { setNotice(mode === "wordtopdf" ? "Hãy chọn tệp DOCX trước khi xử lý." : "Hãy chọn tệp PDF trước khi xử lý."); return; }
+    const usage = consumeDailyUsage(entitlements);
+    if (!usage.allowed) {
+      setNotice("Đã hết lượt trải nghiệm hôm nay. Hãy đăng ký/đăng nhập hoặc nâng cấp gói để tiếp tục.");
+      return;
+    }
     taskControl.current = { cancelled: false, paused: false }; setPaused(false);
-    setBusy(true); setProgress({ current: 0, total: 1, label: "Đang chuẩn bị tác vụ…" }); setNotice("Đang xử lý trên thiết bị…");
+    setBusy(true); setProgress({ current: 0, total: 1, label: "Đang chuẩn bị tác vụ…" }); setNotice(usage.remaining == null ? "Đang xử lý trên thiết bị…" : `Đang xử lý trên thiết bị · còn ${usage.remaining} lượt hôm nay.`);
     try {
       if (mode === "compare") {
         if (files.length !== 2) throw new Error("Hãy chọn đúng hai tệp PDF để so sánh.");
