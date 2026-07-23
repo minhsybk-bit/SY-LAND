@@ -31,12 +31,16 @@ if (entryCss) assert(statSync(join(assetsDir, entryCss)).size < 140 * 1024, "CSS
 const sourceFiles = readdirSync(root).filter((name) => /\.(tsx|ts|css)$/.test(name));
 const source = sourceFiles.map((name) => readFileSync(join(root, name), "utf8")).join("\n");
 const page = readFileSync(join(root, "page.tsx"), "utf8");
+const accountPortal = readFileSync(join(root, "account-portal.tsx"), "utf8");
 for (const id of ["minh-hoa", "cong-cu-pdf", "tai-phan-mem", "tai-khoan", "thanh-toan", "phap-ly"]) {
   assert(page.includes(`id="${id}"`), `Có điểm điều hướng #${id}`);
 }
 assert(page.includes("lazy(() => import(\"./file-processor\"))"), "Xử lý tệp được tải theo nhu cầu");
 assert(page.includes("lazy(() => import(\"./pdf-toolkit\"))"), "Công cụ PDF được tải theo nhu cầu");
 assert(!source.includes("@import \"tailwindcss\""), "Không nạp Tailwind không sử dụng");
+assert(accountPortal.includes('remoteAuth("/settings"'), "Google OAuth kiểm tra trạng thái nhà cung cấp trước khi chuyển hướng");
+assert(accountPortal.includes("unable to exchange external code"), "Google OAuth giải thích lỗi Client Secret");
+assert(!accountPortal.includes('url.searchParams.set("oauth"'), "OAuth dùng URL callback GitHub Pages chính xác, không thêm query thừa");
 
 const browserOutput = assets
   .filter((name) => name.endsWith(".js"))
@@ -49,6 +53,7 @@ assert(!browserOutput.includes("admin/123"), "Không chứa tài khoản quản 
 const schemaSql = readFileSync(join(root, "SUPABASE_SCHEMA.sql"), "utf8");
 const paymentSql = readFileSync(join(root, "SUPABASE_PAYMENTS.sql"), "utf8");
 const paymentFix = readFileSync(join(root, "SUPABASE_PAYMENT_PLANS_FIX.sql"), "utf8");
+const repairSql = readFileSync(join(root, "SUPABASE_REPAIR_AUTH_PAYMENTS.sql"), "utf8");
 assert(
   schemaSql.includes('create policy "profile_self_read"') &&
     schemaSql.includes("id = auth.uid() or public.is_syland_admin()"),
@@ -79,6 +84,10 @@ assert(paymentSql.includes("enable trigger user"), "Bản cài đặt thanh toá
 assert(paymentFix.includes("begin;") && paymentFix.includes("commit;"), "Bản vá thanh toán chạy trong transaction");
 assert(!paymentFix.includes("update public.payment_orders"), "Bản vá gói không kích hoạt trigger của đơn cũ");
 assert(paymentFix.includes("not valid"), "Ràng buộc mới không quét dữ liệu lịch sử");
+assert(repairSql.includes("drop trigger if exists issue_paid_license_trigger"), "Bản phục hồi gỡ trigger cũ trước khi sửa");
+assert(!repairSql.includes("update public.payment_orders\nset plan"), "Bản phục hồi không chuẩn hóa/cập nhật đơn lịch sử");
+assert(repairSql.includes("create trigger issue_paid_license_trigger"), "Bản phục hồi tạo lại trigger cấp mã");
+assert(repairSql.includes("admin_ready"), "Bản phục hồi tự kiểm tra quyền quản trị");
 
 console.log(`SỸ LAND verification: ${pass.length} kiểm tra đạt.`);
 if (failures.length) {
