@@ -19,7 +19,9 @@ create table if not exists public.licenses (
   code text not null unique,
   customer text not null,
   email text not null,
-  plan text not null check (plan in ('Cá nhân', 'Văn phòng', 'Đơn vị')),
+  plan text not null check (plan in ('Dùng thử', 'Go', 'Plus', 'Pro', 'Cá nhân', 'Văn phòng', 'Đơn vị')),
+  seat_count integer not null default 1 check (seat_count between 1 and 500),
+  max_parcels_per_run integer check (max_parcels_per_run is null or max_parcels_per_run > 0),
   expires_at timestamptz not null,
   status text not null default 'Hoạt động' check (status in ('Hoạt động', 'Đã khóa')),
   created_by uuid references auth.users(id),
@@ -28,6 +30,15 @@ create table if not exists public.licenses (
 );
 
 create index if not exists licenses_email_index on public.licenses (lower(email));
+
+alter table public.licenses add column if not exists seat_count integer not null default 1;
+alter table public.licenses add column if not exists max_parcels_per_run integer;
+alter table public.licenses drop constraint if exists licenses_plan_check;
+alter table public.licenses add constraint licenses_plan_check check (plan in ('Dùng thử', 'Go', 'Plus', 'Pro', 'Cá nhân', 'Văn phòng', 'Đơn vị'));
+alter table public.licenses drop constraint if exists licenses_seat_count_check;
+alter table public.licenses add constraint licenses_seat_count_check check (seat_count between 1 and 500);
+alter table public.licenses drop constraint if exists licenses_max_parcels_per_run_check;
+alter table public.licenses add constraint licenses_max_parcels_per_run_check check (max_parcels_per_run is null or max_parcels_per_run > 0);
 
 create or replace function public.is_syland_admin()
 returns boolean

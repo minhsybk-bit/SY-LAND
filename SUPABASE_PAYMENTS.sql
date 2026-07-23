@@ -85,8 +85,8 @@ begin
     -- không dùng để lưu mật khẩu hay dữ liệu bảo mật.
     v_hash := upper(md5(random()::text || clock_timestamp()::text || new.id::text || new.email));
     v_code := 'SYL-' || substr(v_hash, 1, 5) || '-' || substr(v_hash, 6, 5);
-    insert into public.licenses(code, customer, email, plan, expires_at, status, created_by, max_devices)
-    values (v_code, new.customer, new.email, new.plan, now() + make_interval(months => new.duration_months), 'Hoạt động', auth.uid(), new.max_devices);
+    insert into public.licenses(code, customer, email, plan, expires_at, status, created_by, max_devices, seat_count)
+    values (v_code, new.customer, new.email, new.plan, now() + make_interval(months => new.duration_months), 'Hoạt động', auth.uid(), new.max_devices, new.max_devices);
     new.license_code := v_code; new.confirmed_by := auth.uid(); new.confirmed_at := now();
   elsif old.status = 'Đã thanh toán' and new.status is distinct from old.status then
     raise exception 'Không thể đổi trạng thái đơn đã cấp bản quyền';
