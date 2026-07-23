@@ -1,6 +1,7 @@
 "use client";
 
 import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useEntitlements } from "./entitlements";
 
 type CellValue = string | number | boolean | null;
 
@@ -74,7 +75,6 @@ const EMPTY_LOCATION: LocationProfile = { provinceNew: "", provinceOld: "", comm
 
 const ACCEPTED = ".docx,.pdf,.xlsx,.xls,.csv";
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
-const MAX_BATCH_FILES = 200;
 const MAX_BATCH_TOTAL_SIZE = 500 * 1024 * 1024;
 
 function formatBytes(bytes: number) {
@@ -412,6 +412,8 @@ async function processExcel(file: File): Promise<ProcessedResult> {
 }
 
 function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record: HistoryRecord) => void; locationProfile: LocationProfile }) {
+  const entitlements = useEntitlements();
+  const maxBatchFiles = entitlements.maxParcelsPerRun;
   const inputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const masterInputRef = useRef<HTMLInputElement>(null);
@@ -561,7 +563,7 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
   function addFiles(fileList?: FileList | null) {
     if (!fileList) return;
     setBatchNotice("");
-    const availableSlots = Math.max(0, MAX_BATCH_FILES - items.length);
+    const availableSlots = maxBatchFiles == null ? Number.POSITIVE_INFINITY : Math.max(0, maxBatchFiles - items.length);
     const selected = Array.from(fileList).slice(0, availableSlots);
     const existingKeys = new Set(items.map((item) => `${item.file.name}-${item.file.size}-${item.file.lastModified}`));
     const existingBytes = items.reduce((total, item) => total + item.file.size, 0);
@@ -589,16 +591,16 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
           message: valid ? "Chờ xử lý" : "Sai định dạng hoặc vượt quá 20 MB",
         };
       });
-    setItems((current) => [...current, ...next].slice(0, MAX_BATCH_FILES));
+    setItems((current) => maxBatchFiles == null ? [...current, ...next] : [...current, ...next].slice(0, maxBatchFiles));
     const duplicateCount = selected.length - uniqueFiles.length;
     const omittedCount = Math.max(0, Array.from(fileList).length - selected.length) + (uniqueFiles.length - capacityFiles.length);
     if (omittedCount || duplicateCount) {
       setBatchNotice([
-        omittedCount ? `${omittedCount} tệp chưa được thêm do vượt giới hạn ${MAX_BATCH_FILES} tệp hoặc tổng 500 MB.` : "",
+        omittedCount ? `${omittedCount} tệp chưa được thêm do vượt ${maxBatchFiles == null ? "giới hạn kỹ thuật tổng 500 MB" : `hạn mức ${maxBatchFiles} thửa/lần hoặc tổng 500 MB`}.` : "",
         duplicateCount ? `${duplicateCount} tệp trùng đã được bỏ qua.` : "",
       ].filter(Boolean).join(" "));
     } else {
-      setBatchNotice(`Đã thêm ${next.length} tệp. Còn có thể thêm ${Math.max(0, MAX_BATCH_FILES - items.length - next.length)} tệp.`);
+      setBatchNotice(`Đã thêm ${next.length} tệp. ${maxBatchFiles == null ? "Tài khoản không giới hạn số thửa/lần." : `Còn có thể thêm ${Math.max(0, maxBatchFiles - items.length - next.length)} tệp.`}`);
     }
     if (inputRef.current) inputRef.current.value = "";
   }
@@ -857,8 +859,8 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
   return (
     <section className="batch-shell" id="xu-ly-hang-loat" aria-labelledby="batch-title">
       <div className="batch-heading">
-        <div><span className="demo-label">04 · XỬ LÝ HÀNG LOẠT</span><h3 id="batch-title">Chuẩn hóa nhiều hồ sơ trong một lượt</h3><p>Tối đa 200 tệp, 20 MB mỗi tệp và 500 MB mỗi lượt. Hệ thống xử lý tuần tự để hạn chế treo trình duyệt.</p></div>
-        <div className="batch-summary"><strong>{items.length}</strong><span>Tệp đã chọn</span><strong>{readyCount}</strong><span>Sẵn sàng tải</span><strong>{Math.max(0, MAX_BATCH_FILES - items.length)}</strong><span>Còn có thể thêm</span></div>
+        <div><span className="demo-label">04 · XỬ LÝ HÀNG LOẠT</span><h3 id="batch-title">Chuẩn hóa nhiều hồ sơ trong một lượt</h3><p>{maxBatchFiles == null ? "Không giới hạn số thửa theo tài khoản" : `Hạn mức ${maxBatchFiles} thửa/lần`}, 20 MB mỗi tệp và 500 MB mỗi lượt. Hệ thống xử lý tuần tự để hạn chế treo trình duyệt.</p><small>{entitlements.reason}</small></div>
+        <div className="batch-summary"><strong>{items.length}</strong><span>Tệp đã chọn</span><strong>{readyCount}</strong><span>Sẵn sàng tải</span><strong>{maxBatchFiles == null ? "∞" : Math.max(0, maxBatchFiles - items.length)}</strong><span>Còn có thể thêm</span></div>
       </div>
       <div className="batch-toolbar">
         <label className="batch-ocr-toggle"><input type="checkbox" checked={autoClassify} onChange={(event) => setAutoClassify(event.target.checked)} /><span><b>Tự phân loại tên tệp</b><small>Nhận COGCN/CHUACOGIAY và GT/TBXN/DDK</small></span></label>
