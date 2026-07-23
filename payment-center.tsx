@@ -66,6 +66,14 @@ export default function PaymentCenter() {
     catch { /* Schema có thể chưa được cài. */ }
   }
   useEffect(() => { void load(); const timer = window.setInterval(() => void load(), 30000); return () => window.clearInterval(timer); }, []);
+  useEffect(() => {
+    const selectPlan = (event: Event) => {
+      const next = (event as CustomEvent<{ plan?: string }>).detail?.plan;
+      if (next === "plus" || next === "pro") setPlanId(next);
+    };
+    window.addEventListener("syland-select-plan", selectPlan);
+    return () => window.removeEventListener("syland-select-plan", selectPlan);
+  }, []);
 
   async function savePaymentConfig() {
     const auth = session(); if (!isAdmin || !auth?.accessToken) return;
@@ -97,7 +105,13 @@ export default function PaymentCenter() {
       const seats = plan.id === "office" ? officeSeats : 1;
       const rows = await rest("/payment_orders", auth.accessToken, { method: "POST", payload: { plan: plan.name, amount: total, duration_months: billingMonths, seat_count: seats, max_devices: seats } });
       const order = mapPayment(Array.isArray(rows) ? rows[0] : rows); setActive(order); await load(); setMessage("Đã tạo đơn. Chuyển đúng số tiền và nội dung hiển thị bên dưới.");
-    } catch (reason) { setMessage(reason instanceof Error ? `${reason.message} Hãy chạy SUPABASE_PAYMENTS.sql một lần.` : "Không tạo được đơn."); }
+    } catch (reason) {
+      const detail = reason instanceof Error ? reason.message : "";
+      const outdatedPlans = /Gói thanh toán không hợp lệ|payment_orders_(plan|amount|duration_months|max_devices|seat_count)_check/i.test(detail);
+      setMessage(outdatedPlans
+        ? "Máy chủ thanh toán đang dùng danh sách gói cũ. Quản trị viên cần chạy tệp SUPABASE_PAYMENT_PLANS_FIX.sql một lần trong Supabase SQL Editor."
+        : detail || "Không tạo được đơn thanh toán. Vui lòng thử lại.");
+    }
     finally { setBusy(false); }
   }
 

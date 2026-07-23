@@ -106,6 +106,16 @@ alter table public.payment_orders drop constraint if exists payment_orders_durat
 alter table public.payment_orders drop constraint if exists payment_orders_max_devices_check;
 alter table public.payment_orders drop constraint if exists payment_orders_seat_count_check;
 update public.payment_orders set plan = 'Plus' where plan = 'Cá nhân';
+update public.payment_orders
+set plan = case lower(trim(plan))
+  when 'go' then 'Go'
+  when 'plus' then 'Plus'
+  when 'pro' then 'Pro'
+  when 'office' then 'Văn phòng'
+  when 'van phong' then 'Văn phòng'
+  when 'văn phòng' then 'Văn phòng'
+  else plan
+end;
 update public.payment_orders set seat_count = greatest(2, max_devices)
 where plan = 'Văn phòng' and seat_count < 2;
 alter table public.payment_orders add constraint payment_orders_plan_check check (plan in ('Go', 'Plus', 'Pro', 'Văn phòng'));
@@ -122,6 +132,16 @@ returns trigger language plpgsql security definer set search_path = public as $$
 declare v_name text; v_monthly bigint;
 begin
   if auth.uid() is null then raise exception 'Hãy đăng nhập trước khi tạo đơn'; end if;
+  new.plan := case lower(trim(new.plan))
+    when 'go' then 'Go'
+    when 'plus' then 'Plus'
+    when 'pro' then 'Pro'
+    when 'office' then 'Văn phòng'
+    when 'van phong' then 'Văn phòng'
+    when 'văn phòng' then 'Văn phòng'
+    when 'cá nhân' then 'Plus'
+    else trim(new.plan)
+  end;
   if new.duration_months not in (1, 6, 12) then raise exception 'Chu kỳ thanh toán không hợp lệ'; end if;
   if new.plan in ('Go', 'Plus', 'Pro') then
     new.seat_count := 1; new.max_devices := 1;
