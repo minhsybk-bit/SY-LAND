@@ -7,6 +7,7 @@ project nên người dùng có thể đăng ký ở một nơi và đăng nhậ
 
 import json
 import os
+from datetime import date
 from pathlib import Path
 
 import requests
@@ -57,6 +58,32 @@ def _request(method, path, payload=None, token=None, timeout=20):
     return data
 
 
+def _rest_request(method, path, payload=None, token=None, timeout=20):
+    """Gọi Supabase REST/RPC bằng cùng phiên đăng nhập với website."""
+    config = load_config()
+    if not token:
+        raise AccountError("Phiên đăng nhập không hợp lệ.")
+    headers = {
+        "apikey": config["anon_key"],
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+    try:
+        response = requests.request(
+            method, f'{config["url"]}/rest/v1{path}', headers=headers, json=payload, timeout=timeout
+        )
+    except requests.RequestException as exc:
+        raise AccountError("Không đồng bộ được gói quyền. Hãy kiểm tra Internet.") from exc
+    try:
+        data = response.json()
+    except ValueError:
+        data = {}
+    if not response.ok:
+        detail = data.get("message") or data.get("details") or data.get("hint") or "Không đồng bộ được gói quyền."
+        raise AccountError(str(detail))
+    return data
+
+
 def sign_in(email, password):
     email = (email or "").strip().lower()
     if not email or not password:
@@ -71,6 +98,64 @@ def sign_up(email, password, full_name=""):
     if len(password or "") < 8:
         raise AccountError("Mật khẩu cần ít nhất 8 ký tự.")
     return _request("POST", "/signup", {"email": email, "password": password, "data": {"full_name": (full_name or "").strip()}})
+
+
+def guest_entitlements():
+    """Quyền dùng khi chưa đăng ký/đăng nhập, giống chính sách trên website."""
+    return {
+        "ok": True,
+        "role": "guest",
+        "plan": "Dùng thử",
+        "feature_percent": 25,
+        "max_parcels_per_run": 5,
+        "max_file_size_mb": 10,
+        "max_total_upload_mb": 25,
+        "max_uses_per_day": 3,
+        "full_access": False,
+        "recommended_upgrade": "Go",
+    }
+
+
+def sync_entitlements(access_token, email, device_hash, device_name="Windows PC", app_version=""):
+    """Đăng ký/đồng bộ thiết bị và nhận quyền gói hiện hành từ Supabase."""
+    result = _rest_request(
+        "POST",
+        "/rpc/activate_syland_device",
+        {
+            "p_email": (email or "").strip().lower(),
+            "p_device_hash": (device_hash or "").strip(),
+            "p_device_name": (device_name or "Windows PC").strip(),
+            "p_app_version": (app_version or "").strip(),
+        },
+        token=access_token,
+    )
+    if not result.get("ok"):
+        raise AccountError(result.get("message") or "Tài khoản chưa có bản quyền hoạt động.")
+    return result
+
+
+def _usage_path():
+    root = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "SYLAND"
+    root.mkdir(parents=True, exist_ok=True)
+    return root / "guest_usage.json"
+
+
+def consume_guest_use():
+    """Đếm lượt khách cục bộ. Gọi ngay trước khi bắt đầu một tác vụ."""
+    policy = guest_entitlements()
+    path = _usage_path()
+    today = date.today().isoformat()
+    try:
+        usage = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        usage = {}
+    used = int(usage.get("count", 0)) if usage.get("date") == today else 0
+    limit = policy["max_uses_per_day"]
+    if used >= limit:
+        raise AccountError("Đã hết 3 lượt trải nghiệm hôm nay. Hãy đăng ký hoặc đăng nhập SỸ LAND.")
+    used += 1
+    path.write_text(json.dumps({"date": today, "count": used}, ensure_ascii=False), encoding="utf-8")
+    return {"used": used, "remaining": max(0, limit - used), **policy}
 
 
 def configured():
