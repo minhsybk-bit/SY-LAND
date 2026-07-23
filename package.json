@@ -4,7 +4,9 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "build": "vite build --config vite.pages.config.ts"
+    "build": "vite build --config vite.pages.config.ts",
+    "verify": "node scripts/verify-site.mjs",
+    "check": "npm run build && npm run verify"
   },
   "dependencies": {
     "@tailwindcss/postcss": "4.2.1",
