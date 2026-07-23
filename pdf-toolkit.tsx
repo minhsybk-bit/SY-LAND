@@ -31,6 +31,10 @@ function canUseMode(entitlements: EntitlementSnapshot, mode: Mode) {
   return entitlements.role === "admin" || entitlements.fullTools || entitlements.featurePercent >= MODE_LEVEL[mode];
 }
 
+function yieldToBrowser() {
+  return new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+}
+
 function downloadBlob(bytes: Uint8Array, name: string, type = "application/pdf") {
   const blob = new Blob([bytes as BlobPart], { type });
   const url = URL.createObjectURL(blob);
@@ -200,7 +204,10 @@ export default function PdfToolkit() {
           if (reason instanceof Error && reason.message === "SYLAND_TASK_CANCELLED") throw reason;
           next.push({ page: pageNumber, image: "", status: "error", note: reason instanceof Error ? reason.message : "Không render được trang" });
         }
-        setPreviews([...next]);
+        if (pageNumber % 4 === 0 || pageNumber === limit) {
+          setPreviews([...next]);
+          await yieldToBrowser();
+        }
       }
       setPreviews(next); setRemovedPages(new Set()); setSelectedPages(new Set());
       const errors = next.filter((item) => item.status === "error").length;
@@ -730,7 +737,7 @@ export default function PdfToolkit() {
   }
 
   return (
-    <section className="pdf-toolkit" id="cong-cu-pdf" aria-labelledby="pdf-toolkit-title">
+    <section className="pdf-toolkit" aria-labelledby="pdf-toolkit-title">
       <div className="section-heading split-heading"><div><p className="section-kicker">Bộ công cụ PDF địa chính</p><h2 id="pdf-toolkit-title">Tách, chọn trang, nối và xoay PDF<br />ngay trên thiết bị.</h2></div><p>Thiết kế độc lập cho SỸ LAND. Tệp không được tải lên máy chủ; bản gốc không bị sửa hoặc ghi đè.<br /><b>{entitlements.reason}</b></p></div>
       <div className="pdf-tool-shell">
         <aside className="pdf-tool-sidebar" aria-label="Danh mục Bộ công cụ PDF">

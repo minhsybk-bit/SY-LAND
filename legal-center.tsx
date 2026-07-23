@@ -7,7 +7,7 @@ export const TERMS_VERSION = "2026-07-19";
 export default function LegalCenter() {
   const [open, setOpen] = useState<"privacy" | "terms" | "data" | null>(null);
   return (
-    <section className="legal-center" id="phap-ly" aria-labelledby="legal-title">
+    <section className="legal-center" aria-labelledby="legal-title">
       <div className="legal-heading"><div><p className="section-kicker">Minh bạch và an toàn</p><h2 id="legal-title">Dữ liệu thuộc quyền kiểm soát của người dùng.</h2></div><p>SỸ LAND công bố rõ dữ liệu nào được xử lý trên máy, dữ liệu nào được gửi lên máy chủ và trách nhiệm kiểm tra kết quả nghiệp vụ.</p></div>
       <div className="legal-grid">
         <article><span>01</span><h3>Chính sách bảo mật</h3><p>Tài khoản, yêu cầu tư vấn và trạng thái bản quyền được lưu trên máy chủ. Hồ sơ Word, PDF và Excel mặc định xử lý cục bộ trong trình duyệt hoặc phần mềm.</p><button type="button" onClick={() => setOpen(open === "privacy" ? null : "privacy")}>Xem chính sách</button></article>

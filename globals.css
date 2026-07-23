@@ -1,5 +1,3 @@
-@import "tailwindcss";
-
 :root {
   --paper: #f5f1e8;
   --paper-light: #fffdf8;
@@ -19,6 +17,8 @@ body { margin: 0; background: var(--paper); color: var(--body); font-family: "Se
 a { color: inherit; text-decoration: none; }
 button { font: inherit; }
 .page-shell { width: min(100% - 48px, 1440px); margin-inline: auto; }
+.deferred-section { content-visibility: auto; contain-intrinsic-size: 1px 420px; scroll-margin-top: 96px; }
+.section-loading { min-height: 180px; display: grid; place-items: center; color: var(--body); border: 1px solid var(--line); background: rgba(255,255,255,.46); font-weight: 700; letter-spacing: .02em; }
 .section-pad { padding: 116px 0; }
 .section-kicker { margin: 0 0 17px; color: var(--terracotta); font-size: 13px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
 .section-heading h2, .process h2, .vision h2 { margin: 0; color: var(--ink); font-size: clamp(40px, 4.2vw, 64px); line-height: 1.06; letter-spacing: -.045em; }

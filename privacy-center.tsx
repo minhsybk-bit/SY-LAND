@@ -114,7 +114,7 @@ export default function PrivacyCenter() {
   }
 
   return (
-    <section className="privacy-center" id="quyen-du-lieu" aria-labelledby="privacy-center-title">
+    <section className="privacy-center" aria-labelledby="privacy-center-title">
       <div className="privacy-intro"><p className="section-kicker">Quyền dữ liệu cá nhân</p><h2 id="privacy-center-title">Tự xem, tải và yêu cầu xóa dữ liệu.</h2><p>Tài khoản đã đăng nhập có thể tải bản sao dữ liệu do máy chủ SỸ LAND lưu giữ. Yêu cầu xóa luôn qua bước xác minh để tránh mất tài khoản ngoài ý muốn.</p><ul><li>Xuất JSON có thời điểm và nguồn rõ ràng</li><li>Không đưa hồ sơ xử lý cục bộ vào bản xuất</li><li>Có mã và trạng thái theo dõi yêu cầu xóa</li></ul></div>
       <div className="privacy-actions"><article><span>01</span><h3>Tải dữ liệu của tôi</h3><p>Bao gồm hồ sơ tài khoản, bản quyền, thiết bị, yêu cầu tư vấn, phiếu hỗ trợ và lịch sử yêu cầu quyền dữ liệu.</p><button type="button" onClick={exportMyData} disabled={busy}>Tải tệp JSON</button></article><form onSubmit={submitDeletion}><span>02</span><h3>Yêu cầu xóa tài khoản</h3><p>Gửi yêu cầu để quản trị viên xác minh bản quyền, nghĩa vụ hỗ trợ và danh tính trước khi xóa.</p><label>Lý do hoặc lưu ý (không bắt buộc)<textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={1000} placeholder="Thông tin giúp SỸ LAND xác minh yêu cầu…" /></label><button type="submit" disabled={busy}>Gửi yêu cầu xóa</button></form></div>
       {message && <p className="privacy-message" role="status">{message}</p>}

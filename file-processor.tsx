@@ -76,6 +76,42 @@ const EMPTY_LOCATION: LocationProfile = { provinceNew: "", provinceOld: "", comm
 const ACCEPTED = ".docx,.pdf,.xlsx,.xls,.csv";
 const MAX_FILE_SIZE = 100 * 1024 * 1024;
 const MAX_BATCH_TOTAL_SIZE = 2000 * 1024 * 1024;
+const MAX_SPREADSHEET_SIZE = 50 * 1024 * 1024;
+const MAX_SPREADSHEET_ROWS = 250000;
+
+function yieldToBrowser() {
+  return new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+}
+
+async function readSpreadsheetWorkbook(file: File) {
+  if (file.size > MAX_SPREADSHEET_SIZE) {
+    throw new Error("Bảng tính vượt quá 50 MB. Hãy tách theo sheet hoặc chia thành nhiều tệp để tránh treo trình duyệt.");
+  }
+  const XLSX = await import("xlsx");
+  const common = {
+    cellDates: true,
+    cellFormula: false,
+    cellHTML: false,
+    cellNF: false,
+    cellStyles: false,
+    bookVBA: false,
+    dense: true,
+    sheetRows: MAX_SPREADSHEET_ROWS,
+    WTF: false,
+  };
+  if (file.name.toLowerCase().endsWith(".csv")) {
+    const text = await file.text();
+    if (text.includes("\0")) throw new Error("CSV chứa dữ liệu nhị phân không hợp lệ.");
+    return { XLSX, workbook: XLSX.read(text, { ...common, type: "string" }) };
+  }
+  const bytes = new Uint8Array(await file.slice(0, 512).arrayBuffer());
+  const isZip = bytes[0] === 0x50 && bytes[1] === 0x4b;
+  const isOle = bytes.slice(0, 8).every((value, index) => value === [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1][index]);
+  const headerText = new TextDecoder("utf-8", { fatal: false }).decode(bytes).toLowerCase();
+  const isExcelHtml = headerText.includes("<html") || headerText.includes("<table");
+  if (!isZip && !isOle && !isExcelHtml) throw new Error("Tệp không có cấu trúc XLSX/XLS hợp lệ.");
+  return { XLSX, workbook: XLSX.read(await file.arrayBuffer(), { ...common, type: "array" }) };
+}
 
 function formatBytes(bytes: number) {
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
@@ -368,14 +404,7 @@ async function processPdf(
 }
 
 async function processExcel(file: File): Promise<ProcessedResult> {
-  const XLSX = await import("xlsx");
-  let workbook;
-
-  if (file.name.toLowerCase().endsWith(".csv")) {
-    workbook = XLSX.read(await file.text(), { type: "string", cellDates: true });
-  } else {
-    workbook = XLSX.read(await file.arrayBuffer(), { type: "array", cellDates: true });
-  }
+  const { XLSX, workbook } = await readSpreadsheetWorkbook(file);
 
   const sheetName = workbook.SheetNames[0];
   const sheet = workbook.Sheets[sheetName];
@@ -504,8 +533,7 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
       return;
     }
     try {
-      const XLSX = await import("xlsx");
-      const workbook = file.name.toLowerCase().endsWith(".csv") ? XLSX.read(await file.text(), { type: "string", cellDates: true }) : XLSX.read(await file.arrayBuffer(), { type: "array", cellDates: true });
+      const { XLSX, workbook } = await readSpreadsheetWorkbook(file);
       const sheets = workbook.SheetNames.map((name) => ({ name, rows: XLSX.utils.sheet_to_json<CellValue[]>(workbook.Sheets[name], { header: 1, defval: "", raw: false }) }));
       const sheetName = sheets[0].name;
       const rows = sheets[0].rows;
@@ -637,6 +665,7 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
         if (firstByHash.has(hash)) duplicates.add(item.id);
         else firstByHash.set(hash, item.id);
         setBatchProgress({ current: index + 1, total: items.length, label: `SHA-256 · ${item.file.name}` });
+        await yieldToBrowser();
       }
       setContentHashes(hashes);
       setContentDuplicateIds(duplicates);
@@ -709,6 +738,7 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
       }
       completedCount += 1;
       setBatchProgress({ current: completedCount, total: processable.length, label: item.file.name });
+      await yieldToBrowser();
     }
     if (stopRequestedRef.current) setItems((current) => current.map((item) => item.status === "processing" ? { ...item, status: "review", message: "Đã dừng; cần xử lý lại tệp này" } : item));
     setRunning(false);
@@ -718,7 +748,7 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
   async function downloadZip() {
     const validItems = items.filter((item, index) => suggestedNames[index] && !duplicateNames.has(suggestedNames[index].toLocaleLowerCase()) && item.status !== "error");
     if (!validItems.length) return;
-    const { zipSync } = await import("fflate");
+    const { zip } = await import("fflate");
     const archive: Record<string, Uint8Array> = {};
     for (const item of validItems) {
       const fileName = buildSuggestedName(item.file, item.fields);
@@ -728,14 +758,18 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
     }
     const manifestRows: CellValue[][] = [["STT", "Tệp nguồn", "Tên chuẩn", "Mã xã", "Số tờ", "Số thửa", "SHA-256", "Trạng thái", "Ghi chú"], ...validItems.map((item, index) => [index + 1, item.file.name, buildSuggestedName(item.file, item.fields), item.fields.communeCode, item.fields.mapSheet, item.fields.parcel, contentHashes[item.id] || "Chưa tính", item.status, item.message])];
     archive[`${safeBaseName(archiveRoot.trim() || "HO_SO_DAT_DAI")}_NHAT_KY.csv`] = new TextEncoder().encode(`\uFEFF${manifestRows.map((row) => row.map(escapeCsv).join(",")).join("\r\n")}`);
-    const zipped = zipSync(archive, { level: 6 });
+    setBatchProgress({ current: validItems.length, total: validItems.length, label: "Đang nén ZIP trong nền…" });
+    const zipped = await new Promise<Uint8Array>((resolve, reject) => {
+      zip(archive, { level: 6 }, (error, data) => error ? reject(error) : resolve(data));
+    });
     const blob = new Blob([zipped], { type: "application/zip" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
     anchor.download = `HO_SO_DA_CHUAN_HOA_${new Date().toISOString().slice(0, 10)}.zip`;
     anchor.click();
-    URL.revokeObjectURL(url);
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setBatchProgress({ current: validItems.length, total: validItems.length, label: "Đã tạo ZIP thành công" });
   }
 
   function downloadRenameCmd() {
