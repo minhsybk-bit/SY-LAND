@@ -27,7 +27,7 @@ type LandFields = {
   parcel: string;
   area: string;
   prefix: "CHUACOGIAY" | "COGCN";
-  suffix: "GT" | "TBXN" | "DDK";
+  suffix: string;
 };
 
 type BatchItem = {
@@ -126,14 +126,57 @@ const VILLAGE_CODE_MAP: Array<{ code: string; names: string[] }> = [
   { code: "02140", names: ["bản kén", "nặm cà", "chợ mới", "tân an", "nà diệc", "bản sảng", "nà lẹng", "cốc phia", "nà dường", "văn lang"] },
 ];
 
+function normalizeSearchText(value: string) {
+  return value.normalize("NFC").toLocaleLowerCase("vi-VN").replace(/\s+/g, " ").trim();
+}
+
+function parseConfiguredVillageCodes(profile?: LocationProfile) {
+  if (!profile) return [] as Array<{ code: string; names: string[] }>;
+  const mappings: Array<{ code: string; names: string[] }> = [];
+  profile.aliases.split(/\n|\|/).forEach((line) => {
+    const match = line.trim().match(/^([0-9]{4,5})\s*[:=]\s*(.+)$/);
+    if (!match) return;
+    mappings.push({
+      code: match[1].padStart(5, "0"),
+      names: match[2].split(/[,;]/).map(normalizeSearchText).filter((name) => name.length >= 2),
+    });
+  });
+  return mappings;
+}
+
 function findVillageCode(text: string, profile?: LocationProfile) {
-  const normalized = text.toLocaleLowerCase("vi-VN");
+  const normalized = normalizeSearchText(text);
+  const configuredMappings = parseConfiguredVillageCodes(profile);
+  const configuredMatch = configuredMappings.find((entry) => entry.names.some((name) => normalized.includes(name)));
+  if (configuredMatch) return configuredMatch.code;
+
   if (profile?.communeCode) {
-    const configuredNames = [profile.provinceNew, profile.provinceOld, profile.communeNew, profile.communeOld, profile.villageNew, profile.villageOld, ...profile.aliases.split(/[,;\n]/)].map((name) => name.trim().toLocaleLowerCase("vi-VN")).filter((name) => name.length >= 2);
+    // Ưu tiên tên thôn/bản/xóm trước tên xã theo yêu cầu nghiệp vụ.
+    const villageNames = [profile.villageOld, profile.villageNew]
+      .map(normalizeSearchText).filter((name) => name.length >= 2);
+    if (villageNames.some((name) => normalized.includes(name))) return profile.communeCode.padStart(5, "0");
+    const configuredNames = [profile.communeOld, profile.communeNew, profile.provinceOld, profile.provinceNew, ...profile.aliases.split(/[,;\n]/).filter((name) => !/^\s*[0-9]{4,5}\s*[:=]/.test(name))]
+      .map(normalizeSearchText).filter((name) => name.length >= 2);
     if (!configuredNames.length || configuredNames.some((name) => normalized.includes(name))) return profile.communeCode.padStart(5, "0");
     return "";
   }
   return VILLAGE_CODE_MAP.find((entry) => entry.names.some((name) => normalized.includes(name)))?.code || "";
+}
+
+function extractNumberedSection(text: string, section: "a" | "b") {
+  const normalized = text.replace(/\r/g, "\n");
+  const marker = section === "a" ? "a" : "b";
+  const nextMarker = section === "a" ? "b" : "c";
+  const pattern = new RegExp(
+    `(?:^|\\n)\\s*2\\s*[.\\-)]?\\s*${marker}\\s*[.\\-):]?\\s*([\\s\\S]*?)(?=(?:\\n\\s*2\\s*[.\\-)]?\\s*${nextMarker}\\s*[.\\-):]?)|$)`,
+    "iu",
+  );
+  return normalized.match(pattern)?.[1]?.trim() || "";
+}
+
+function sanitizeSuffix(value: string) {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/gi, "D")
+    .toUpperCase().replace(/[^A-Z0-9_-]/g, "").replace(/^_+|_+$/g, "").slice(0, 24);
 }
 
 function cleanNumber(value?: string) {
@@ -148,10 +191,16 @@ function normalizeCommuneCode(value?: string) {
 function extractLandFields(text: string, fileName: string, profile?: LocationProfile): LandFields {
   const fileMatch = fileName.match(/(?:CHUACOGIAY|CHUACAPGIAY|COGCN)[_-]([0-9]{4,5})[_-]([0-9]{1,6})[_-]([0-9]{1,7})(?=[_.-]|$)/i);
   const explicitCode = text.match(/m[aã]\s*x[aã]\s*[:\-]?\s*([0-9]{4,5})/iu)?.[1];
+  const section2a = extractNumberedSection(text, "a");
+  const section2b = extractNumberedSection(text, "b");
   const parcelAddress = text.match(/(?:địa\s*chỉ\s*thửa\s*đất|thửa\s*đất\s*tại)([\s\S]{0,280})/iu)?.[1] || "";
-  const communeCode = normalizeCommuneCode(fileMatch?.[1] || explicitCode || findVillageCode(parcelAddress, profile) || findVillageCode(text, profile) || profile?.communeCode);
-  const mapSheetFromText = text.match(/tờ\s*bản\s*đồ(?:\s*địa\s*chính)?\s*(?:số)?\s*[:\-]?\s*([0-9]{1,6})/iu)?.[1];
-  const parcelFromText = text.match(/(?:thửa\s*đất|thửa)\s*(?:số)?\s*[:\-]?\s*([0-9]{1,7})/iu)?.[1];
+  // Mục 2.b là nguồn xác định địa bàn; tên thôn trong cấu hình được dò trước tên xã.
+  const communeCode = normalizeCommuneCode(fileMatch?.[1] || explicitCode || findVillageCode(section2b, profile) || findVillageCode(parcelAddress, profile) || findVillageCode(text, profile) || profile?.communeCode);
+  // Mục 2.a là nguồn chính của số tờ/số thửa; toàn văn chỉ là phương án dự phòng cho mẫu khác.
+  const mapSheetFromText = (section2a || text).match(/tờ\s*bản\s*đồ(?:\s*địa\s*chính)?\s*(?:số)?\s*[:\-]?\s*([0-9]{1,6})/iu)?.[1]
+    || text.match(/tờ\s*bản\s*đồ(?:\s*địa\s*chính)?\s*(?:số)?\s*[:\-]?\s*([0-9]{1,6})/iu)?.[1];
+  const parcelFromText = (section2a || text).match(/(?:thửa\s*đất|thửa)\s*(?:số)?\s*[:\-]?\s*([0-9]{1,7})/iu)?.[1]
+    || text.match(/(?:thửa\s*đất|thửa)\s*(?:số)?\s*[:\-]?\s*([0-9]{1,7})/iu)?.[1];
   const area = text.match(/diện\s*tích(?:\s*thửa\s*đất)?\s*[:\-]?\s*([0-9][0-9.,\s]*)\s*m(?:2|²)/iu)?.[1];
   const forestry = /\b(?:RSX|RPH|RDD)\b/i.test(`${text} ${fileName}`);
   let mapSheet = cleanNumber(fileMatch?.[2] || mapSheetFromText);
@@ -179,9 +228,10 @@ function reviewLandFields(fields: LandFields, text: string, fileName: string) {
 }
 
 function buildSuggestedName(file: File, fields: LandFields) {
-  if (!/^\d{5}$/.test(fields.communeCode) || !/^\d{1,6}$/.test(fields.mapSheet) || !/^\d{1,7}$/.test(fields.parcel)) return "";
+  const suffix = sanitizeSuffix(fields.suffix);
+  if (!/^\d{5}$/.test(fields.communeCode) || !/^\d{1,6}$/.test(fields.mapSheet) || !/^\d{1,7}$/.test(fields.parcel) || !suffix) return "";
   const extension = file.name.split(".").pop()?.toLowerCase() || "pdf";
-  return `${fields.prefix}_${fields.communeCode}_${fields.mapSheet}_${fields.parcel}_${fields.suffix}.${extension}`;
+  return `${fields.prefix}_${fields.communeCode}_${fields.mapSheet}_${fields.parcel}_${suffix}.${extension}`;
 }
 
 async function processWord(file: File): Promise<ProcessedResult> {
@@ -372,7 +422,7 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
   const [batchSearch, setBatchSearch] = useState("");
   const [batchSort, setBatchSort] = useState<"added" | "name" | "parcel" | "comparison" | "status">("added");
   const [batchPrefix, setBatchPrefix] = useState<LandFields["prefix"]>("CHUACOGIAY");
-  const [batchSuffix, setBatchSuffix] = useState<LandFields["suffix"]>("GT");
+  const [batchSuffix, setBatchSuffix] = useState("GT");
   const [archiveMode, setArchiveMode] = useState<"flat" | "folders">("folders");
   const [archiveRoot, setArchiveRoot] = useState("HO_SO_DAT_DAI");
   const [batchOcr, setBatchOcr] = useState(false);
@@ -391,6 +441,7 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
     return new Set([...counts.entries()].filter(([, count]) => count > 1).map(([name]) => name));
   }, [suggestedNames]);
   const readyCount = items.filter((item, index) => suggestedNames[index] && !duplicateNames.has(suggestedNames[index].toLocaleLowerCase()) && item.status !== "error").length;
+  const cmdReadyCount = items.filter((item, index) => /\.pdf$/i.test(item.file.name) && suggestedNames[index] && !duplicateNames.has(suggestedNames[index].toLocaleLowerCase()) && (item.status === "done" || item.status === "review")).length;
   const masterKeyCounts = useMemo(() => {
     const counts = new Map<string, number>();
     if (!master || master.codeColumn < 0 || master.sheetColumn < 0 || master.parcelColumn < 0) return counts;
@@ -655,6 +706,39 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
     URL.revokeObjectURL(url);
   }
 
+  function downloadRenameCmd() {
+    const pdfItems = items.filter((item, index) =>
+      /\.pdf$/i.test(item.file.name)
+      && Boolean(suggestedNames[index])
+      && !duplicateNames.has(suggestedNames[index].toLocaleLowerCase())
+      && (item.status === "done" || item.status === "review"),
+    );
+    if (!pdfItems.length) return;
+    const escapeBatchName = (name: string) => name.replaceAll("%", "%%");
+    const commands = pdfItems.map((item) =>
+      `ren "${escapeBatchName(item.file.name)}" "${escapeBatchName(buildSuggestedName(item.file, item.fields))}"`,
+    );
+    const content = [
+      "@echo off",
+      "chcp 65001 >nul",
+      "setlocal",
+      "echo SỸ LAND - DOI TEN PDF HANG LOAT",
+      "echo Thu muc: %CD%",
+      "",
+      ...commands,
+      "",
+      `echo Da thuc hien ${commands.length} lenh doi ten.`,
+      "pause",
+    ].join("\r\n");
+    const blob = new Blob(["\uFEFF", content], { type: "application/octet-stream" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `SY_LAND_DOI_TEN_PDF_${new Date().toISOString().slice(0, 10)}.bat`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
   function downloadComparisonReport() {
     if (!master || !items.length) return;
     const labels = { none: "Chưa đối chiếu", missing: "Thiếu khóa", matched: "Trùng khớp", unmatched: "Không có trong file tổng" };
@@ -757,7 +841,7 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
       <div className="batch-toolbar">
         <label className="batch-ocr-toggle"><input type="checkbox" checked={autoClassify} onChange={(event) => setAutoClassify(event.target.checked)} /><span><b>Tự phân loại tên tệp</b><small>Nhận COGCN/CHUACOGIAY và GT/TBXN/DDK</small></span></label>
         <label>Nhóm hồ sơ<select value={batchPrefix} onChange={(event) => setBatchPrefix(event.target.value as LandFields["prefix"])}><option value="CHUACOGIAY">Chưa có giấy</option><option value="COGCN">Có GCN</option></select></label>
-        <label>Hậu tố<select value={batchSuffix} onChange={(event) => setBatchSuffix(event.target.value as LandFields["suffix"])}><option value="GT">GT</option><option value="TBXN">TBXN</option><option value="DDK">DDK</option></select></label>
+        <label>Hậu tố tự đặt<input value={batchSuffix} maxLength={24} onChange={(event) => setBatchSuffix(sanitizeSuffix(event.target.value))} placeholder="GT hoặc TBXN" list="syland-suffixes" /><datalist id="syland-suffixes"><option value="GT" /><option value="TBXN" /><option value="DDK" /></datalist></label>
         <label>Cách đóng gói<select value={archiveMode} onChange={(event) => setArchiveMode(event.target.value as "flat" | "folders")}><option value="folders">Chia thư mục tự động</option><option value="flat">Một thư mục</option></select></label>
         {archiveMode === "folders" && <label className="archive-root-label">Tên thư mục gốc<input value={archiveRoot} maxLength={50} onChange={(event) => setArchiveRoot(event.target.value)} placeholder="HO_SO_DAT_DAI" /></label>}
         <label className="batch-ocr-toggle"><input type="checkbox" checked={batchOcr} onChange={(event) => setBatchOcr(event.target.checked)} /><span><b>OCR PDF scan</b><small>Tối đa 5 PDF/lượt; xử lý lâu hơn</small></span></label>
@@ -766,6 +850,14 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
         <input ref={folderInputRef} type="file" accept={ACCEPTED} multiple {...({ webkitdirectory: "", directory: "" } as Record<string, string>)} onChange={(event) => addFiles(event.target.files)} aria-label="Chọn thư mục hồ sơ" />
         <button type="button" className="batch-add" onClick={() => inputRef.current?.click()}>+ Chọn nhiều tệp</button>
         <button type="button" className="batch-add folder-add" onClick={() => folderInputRef.current?.click()}>+ Chọn cả thư mục</button>
+      </div>
+
+      <div className="rename-workflow-note">
+        <strong>Đổi tên PDF theo nội dung hồ sơ</strong>
+        <span>1. Đọc “Thửa đất số” và “Tờ bản đồ số” tại mục 2.a</span>
+        <span>2. Đọc mục 2.b, ưu tiên tên thôn để xác định xã cũ/mã xã trong cấu hình</span>
+        <span>3. Xem trước cú pháp CHUACOGIAY_MÃXÃ_SỐTỜ_SỐTHỬA_{sanitizeSuffix(batchSuffix) || "HẬUTỐ"}.pdf</span>
+        <span>4. Tải tệp CMD và chạy trong thư mục chứa PDF gốc</span>
       </div>
 
       {archiveMode === "folders" && <div className="folder-preview" aria-label="Cấu trúc thư mục ZIP"><span>ZIP sẽ được sắp xếp:</span><code>{safeBaseName(archiveRoot.trim() || "HO_SO_DAT_DAI")} / COGCN hoặc CHUACOGIAY / GT, TBXN hoặc DDK / tệp</code></div>}
@@ -823,6 +915,7 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
         <button type="button" className="button report-download" onClick={() => void scanContentDuplicates()} disabled={!items.length || running}>Kiểm tra tệp trùng</button>
         {contentDuplicateIds.size > 0 && <button type="button" className="button batch-stop" onClick={removeContentDuplicates} disabled={running}>Bỏ {contentDuplicateIds.size} bản trùng</button>}
         <button type="button" className="button batch-download" onClick={downloadZip} disabled={!readyCount || running}>Tải {readyCount} tệp dạng ZIP <span aria-hidden="true">↓</span></button>
+        <button type="button" className="button cmd-download" onClick={downloadRenameCmd} disabled={!cmdReadyCount || running}>Tải {cmdReadyCount} lệnh CMD đổi tên PDF <span aria-hidden="true">↓</span></button>
         <button type="button" className="button report-download" onClick={downloadComparisonReport} disabled={!master || !items.length}>Tải báo cáo CSV <span aria-hidden="true">↓</span></button>
         <button type="button" className="button report-download" onClick={() => void downloadReviewWorkbook()} disabled={!master || (!unmatchedCount && !comparison.includes("missing"))}>Xuất hồ sơ cần rà soát (.xlsx) <span aria-hidden="true">↓</span></button>
         <button type="button" className="button report-download" onClick={() => void downloadMasterDuplicates()} disabled={!master || !duplicateMasterCount}>Xuất {duplicateMasterCount} khóa trùng (.xlsx) <span aria-hidden="true">↓</span></button>
@@ -1087,7 +1180,7 @@ export default function FileProcessor() {
           <label>Mã xã dùng đặt tên tệp<input value={locationProfile.communeCode} inputMode="numeric" maxLength={5} placeholder="Mã 5 chữ số" onChange={(event) => setLocationProfile((current) => ({ ...current, communeCode: event.target.value.replace(/\D/g, "").slice(0, 5) }))} /></label>
           <label>Thôn/bản/xóm hiện nay<input value={locationProfile.villageNew} placeholder="Tên hiện nay" onChange={(event) => setLocationProfile((current) => ({ ...current, villageNew: event.target.value }))} /></label>
           <label>Thôn/bản/xóm trước sắp xếp<input value={locationProfile.villageOld} placeholder="Tên cũ" onChange={(event) => setLocationProfile((current) => ({ ...current, villageOld: event.target.value }))} /></label>
-          <label className="location-aliases">Tên gọi khác, địa danh liên quan<textarea value={locationProfile.aliases} placeholder="Nhập nhiều tên, cách nhau bằng dấu phẩy; ví dụ: Khu 1, Nà Duồng, tên viết tắt…" onChange={(event) => setLocationProfile((current) => ({ ...current, aliases: event.target.value }))} /></label>
+          <label className="location-aliases">Tên gọi khác hoặc bảng thôn → mã xã<textarea value={locationProfile.aliases} placeholder={"Tên gọi khác, cách nhau bằng dấu phẩy; hoặc mỗi xã một dòng:\n02146 = Khuổi Phầy, Kim Vân, Quốc Tuấn\n02143 = Bản Giang, Pàn Xả, Khuổi Nộc"} onChange={(event) => setLocationProfile((current) => ({ ...current, aliases: event.target.value }))} /></label>
           <div className="location-actions"><p><span aria-hidden="true">✓</span>Cấu hình được lưu cục bộ trên thiết bị và áp dụng cho cả xử lý một tệp, hàng loạt và đối chiếu.</p><input ref={locationImportRef} type="file" accept="application/json,.json" onChange={(event) => void importLocationProfile(event.target.files?.[0])} aria-label="Nhập cấu hình địa bàn" /><button type="button" onClick={exportLocationProfile}>Xuất cấu hình</button><button type="button" onClick={() => locationImportRef.current?.click()}>Nhập cấu hình</button><button type="button" onClick={() => setLocationProfile(EMPTY_LOCATION)}>Xóa cấu hình</button></div>
         </div>
       </details>
