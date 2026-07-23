@@ -46,7 +46,7 @@ export default function SoftwareRelease() {
   }
 
   return (
-    <section className="software-release" id="tai-phan-mem" aria-labelledby="release-title">
+    <section className="software-release" aria-labelledby="release-title">
       <div className="release-copy">
         <p className="section-kicker">Tiện ích hỗ trợ làm sạch CSDL đất đai SỸ LAND</p>
         <h2 id="release-title">Xử lý hồ sơ ngay trên máy tính.<br />Chủ động và riêng tư hơn.</h2>
