@@ -74,11 +74,11 @@ assert(
     paymentSql.includes("new.confirmed_by := auth.uid()"),
   "Xác nhận thanh toán tự động cấp và lưu mã bản quyền"
 );
-for (const sql of [paymentSql, paymentFix]) {
-  assert(sql.includes("disable trigger user"), "Bản vá thanh toán tạm dừng trigger an toàn");
-  assert(sql.includes("enable trigger user"), "Bản vá thanh toán bật lại trigger");
-}
+assert(paymentSql.includes("disable trigger user"), "Bản cài đặt thanh toán tạm dừng trigger khi nâng cấp dữ liệu");
+assert(paymentSql.includes("enable trigger user"), "Bản cài đặt thanh toán bật lại trigger sau nâng cấp");
 assert(paymentFix.includes("begin;") && paymentFix.includes("commit;"), "Bản vá thanh toán chạy trong transaction");
+assert(!paymentFix.includes("update public.payment_orders"), "Bản vá gói không kích hoạt trigger của đơn cũ");
+assert(paymentFix.includes("not valid"), "Ràng buộc mới không quét dữ liệu lịch sử");
 
 console.log(`SỸ LAND verification: ${pass.length} kiểm tra đạt.`);
 if (failures.length) {
