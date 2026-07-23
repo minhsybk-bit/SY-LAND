@@ -74,6 +74,8 @@ const EMPTY_LOCATION: LocationProfile = { provinceNew: "", provinceOld: "", comm
 
 const ACCEPTED = ".docx,.pdf,.xlsx,.xls,.csv";
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
+const MAX_BATCH_FILES = 200;
+const MAX_BATCH_TOTAL_SIZE = 500 * 1024 * 1024;
 
 function formatBytes(bytes: number) {
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
@@ -428,6 +430,7 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
   const [batchOcr, setBatchOcr] = useState(false);
   const [autoClassify, setAutoClassify] = useState(true);
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, label: "" });
+  const [batchNotice, setBatchNotice] = useState("");
   const [contentHashes, setContentHashes] = useState<Record<string, string>>({});
   const [contentDuplicateIds, setContentDuplicateIds] = useState<Set<string>>(new Set());
 
@@ -557,10 +560,19 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
 
   function addFiles(fileList?: FileList | null) {
     if (!fileList) return;
-    const selected = Array.from(fileList).slice(0, 50);
+    setBatchNotice("");
+    const availableSlots = Math.max(0, MAX_BATCH_FILES - items.length);
+    const selected = Array.from(fileList).slice(0, availableSlots);
     const existingKeys = new Set(items.map((item) => `${item.file.name}-${item.file.size}-${item.file.lastModified}`));
-    const next = selected
-      .filter((file) => !existingKeys.has(`${file.name}-${file.size}-${file.lastModified}`))
+    const existingBytes = items.reduce((total, item) => total + item.file.size, 0);
+    let acceptedBytes = existingBytes;
+    const uniqueFiles = selected.filter((file) => !existingKeys.has(`${file.name}-${file.size}-${file.lastModified}`));
+    const capacityFiles = uniqueFiles.filter((file) => {
+      if (acceptedBytes + file.size > MAX_BATCH_TOTAL_SIZE) return false;
+      acceptedBytes += file.size;
+      return true;
+    });
+    const next = capacityFiles
       .map<BatchItem>((file, index) => {
         const extension = file.name.split(".").pop()?.toLowerCase() || "";
         const valid = ["docx", "pdf", "xlsx", "xls", "csv"].includes(extension) && file.size <= MAX_FILE_SIZE;
@@ -577,7 +589,17 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
           message: valid ? "Chờ xử lý" : "Sai định dạng hoặc vượt quá 20 MB",
         };
       });
-    setItems((current) => [...current, ...next].slice(0, 50));
+    setItems((current) => [...current, ...next].slice(0, MAX_BATCH_FILES));
+    const duplicateCount = selected.length - uniqueFiles.length;
+    const omittedCount = Math.max(0, Array.from(fileList).length - selected.length) + (uniqueFiles.length - capacityFiles.length);
+    if (omittedCount || duplicateCount) {
+      setBatchNotice([
+        omittedCount ? `${omittedCount} tệp chưa được thêm do vượt giới hạn ${MAX_BATCH_FILES} tệp hoặc tổng 500 MB.` : "",
+        duplicateCount ? `${duplicateCount} tệp trùng đã được bỏ qua.` : "",
+      ].filter(Boolean).join(" "));
+    } else {
+      setBatchNotice(`Đã thêm ${next.length} tệp. Còn có thể thêm ${Math.max(0, MAX_BATCH_FILES - items.length - next.length)} tệp.`);
+    }
     if (inputRef.current) inputRef.current.value = "";
   }
 
@@ -833,10 +855,10 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
   }
 
   return (
-    <section className="batch-shell" aria-labelledby="batch-title">
+    <section className="batch-shell" id="xu-ly-hang-loat" aria-labelledby="batch-title">
       <div className="batch-heading">
-        <div><span className="demo-label">04 · XỬ LÝ HÀNG LOẠT</span><h3 id="batch-title">Chuẩn hóa nhiều hồ sơ trong một lượt</h3><p>Tối đa 50 tệp, 20 MB mỗi tệp. Có thể bật OCR cho tối đa 5 PDF scan trong mỗi lượt.</p></div>
-        <div className="batch-summary"><strong>{items.length}</strong><span>Tệp đã chọn</span><strong>{readyCount}</strong><span>Sẵn sàng tải</span></div>
+        <div><span className="demo-label">04 · XỬ LÝ HÀNG LOẠT</span><h3 id="batch-title">Chuẩn hóa nhiều hồ sơ trong một lượt</h3><p>Tối đa 200 tệp, 20 MB mỗi tệp và 500 MB mỗi lượt. Hệ thống xử lý tuần tự để hạn chế treo trình duyệt.</p></div>
+        <div className="batch-summary"><strong>{items.length}</strong><span>Tệp đã chọn</span><strong>{readyCount}</strong><span>Sẵn sàng tải</span><strong>{Math.max(0, MAX_BATCH_FILES - items.length)}</strong><span>Còn có thể thêm</span></div>
       </div>
       <div className="batch-toolbar">
         <label className="batch-ocr-toggle"><input type="checkbox" checked={autoClassify} onChange={(event) => setAutoClassify(event.target.checked)} /><span><b>Tự phân loại tên tệp</b><small>Nhận COGCN/CHUACOGIAY và GT/TBXN/DDK</small></span></label>
@@ -851,6 +873,7 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
         <button type="button" className="batch-add" onClick={() => inputRef.current?.click()}>+ Chọn nhiều tệp</button>
         <button type="button" className="batch-add folder-add" onClick={() => folderInputRef.current?.click()}>+ Chọn cả thư mục</button>
       </div>
+      {batchNotice && <p className="batch-capacity-notice" role="status">{batchNotice}</p>}
 
       <div className="rename-workflow-note">
         <strong>Đổi tên PDF theo nội dung hồ sơ</strong>
@@ -862,7 +885,7 @@ function BatchProcessor({ onProcessed, locationProfile }: { onProcessed: (record
 
       {archiveMode === "folders" && <div className="folder-preview" aria-label="Cấu trúc thư mục ZIP"><span>ZIP sẽ được sắp xếp:</span><code>{safeBaseName(archiveRoot.trim() || "HO_SO_DAT_DAI")} / COGCN hoặc CHUACOGIAY / GT, TBXN hoặc DDK / tệp</code></div>}
 
-      <div className="master-panel">
+      <div className="master-panel" id="doi-chieu-du-lieu">
         <div className="master-intro"><span className="demo-label">05 · ĐỐI CHIẾU FILE TỔNG</span><strong>So khớp theo Mã xã + Số tờ + Số thửa</strong><small>Chỉ đọc dữ liệu trên thiết bị, không thay đổi file Excel gốc.</small></div>
         <input ref={masterInputRef} type="file" accept=".xlsx,.xls,.csv" onChange={(event) => void loadMasterFile(event.target.files?.[0])} aria-label="Chọn file Excel tổng" />
         <button type="button" className="master-file-button" onClick={() => masterInputRef.current?.click()}>{master ? "Đổi file tổng" : "+ Chọn file tổng"}</button>
@@ -1169,8 +1192,12 @@ export default function FileProcessor() {
 
   return (
     <>
-    <div className="processor-shell">
-      <details className="location-profile" open>
+    <div className="file-workspace-head">
+      <div><span className="demo-label">TRUNG TÂM XỬ LÝ TỆP</span><h3>Xử lý hồ sơ theo quy trình rõ ràng</h3><p>Chọn đúng khu vực công việc; dữ liệu được xử lý cục bộ và không ghi đè tệp gốc.</p></div>
+      <nav aria-label="Điều hướng Xử lý tệp"><a href="#xu-ly-don">01 · Một tệp</a><a href="#xu-ly-hang-loat">02 · Hàng loạt</a><a href="#doi-chieu-du-lieu">03 · Đối chiếu</a><a href="#nhat-ky-xu-ly">04 · Nhật ký</a></nav>
+    </div>
+    <div className="processor-shell" id="xu-ly-don">
+      <details className="location-profile">
         <summary><div><span className="location-glyph" aria-hidden="true">⌖</span><div><strong>Địa bàn xử lý hồ sơ</strong><small>Khai báo một lần để nhận diện địa danh và mã xã trên toàn quốc.</small></div></div><span>{locationProfile.communeCode ? `Mã xã ${locationProfile.communeCode}` : "Chưa khai báo"}</span></summary>
         <div className="location-form">
           <label>Tỉnh/thành phố hiện nay<input value={locationProfile.provinceNew} placeholder="Ví dụ: Thái Nguyên" onChange={(event) => setLocationProfile((current) => ({ ...current, provinceNew: event.target.value }))} /></label>
@@ -1267,7 +1294,7 @@ export default function FileProcessor() {
       </div>
     </div>
     <BatchProcessor onProcessed={addHistory} locationProfile={locationProfile} />
-    <section className="local-history" aria-labelledby="history-title">
+    <section className="local-history" id="nhat-ky-xu-ly" aria-labelledby="history-title">
       <div className="history-heading"><div><span className="demo-label">06 · NHẬT KÝ CỤC BỘ</span><h3 id="history-title">Lịch sử xử lý gần đây</h3><p>Chỉ lưu tên tệp và trạng thái trên thiết bị này; không lưu nội dung hồ sơ.</p></div><div><button type="button" onClick={exportHistory} disabled={!history.length}>Tải CSV</button><button type="button" onClick={clearHistory} disabled={!history.length}>Xóa lịch sử</button></div></div>
       {!history.length ? <p className="history-empty">Chưa có hoạt động. Nhật ký sẽ xuất hiện sau khi xử lý tệp.</p> : <div className="history-table-wrap"><table><thead><tr><th>Thời gian</th><th>Tệp nguồn</th><th>Loại</th><th>Kết quả</th><th>Tên đề xuất</th></tr></thead><tbody>{history.map((entry) => <tr key={entry.id}><td>{new Date(entry.processedAt).toLocaleString("vi-VN")}</td><td>{entry.fileName}</td><td>{entry.fileType}</td><td><span>{entry.result}</span></td><td><code>{entry.suggestedName || "—"}</code></td></tr>)}</tbody></table></div>}
     </section>
