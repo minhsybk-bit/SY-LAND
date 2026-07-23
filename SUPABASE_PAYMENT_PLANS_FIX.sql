@@ -4,6 +4,10 @@
 
 begin;
 
+-- Tạm dừng các trigger nghiệp vụ trong đúng giao dịch nâng cấp.
+-- Nếu bất kỳ lệnh nào lỗi, transaction rollback sẽ tự khôi phục trạng thái trigger.
+alter table public.payment_orders disable trigger user;
+
 alter table public.payment_orders
   add column if not exists seat_count integer not null default 1;
 
@@ -114,6 +118,8 @@ drop trigger if exists prepare_payment_order_trigger on public.payment_orders;
 create trigger prepare_payment_order_trigger
 before insert on public.payment_orders
 for each row execute procedure public.prepare_payment_order();
+
+alter table public.payment_orders enable trigger user;
 
 commit;
 
