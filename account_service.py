@@ -7,8 +7,13 @@ project nên người dùng có thể đăng ký ở một nơi và đăng nhậ
 
 import json
 import os
+import queue
+import threading
+import webbrowser
 from datetime import date
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from urllib.parse import urlencode
 
 import requests
 
@@ -89,6 +94,76 @@ def sign_in(email, password):
     if not email or not password:
         raise AccountError("Hãy nhập email và mật khẩu.")
     return _request("POST", "/token?grant_type=password", {"email": email, "password": password})
+
+
+def sign_in_with_google(timeout=180):
+    """Đăng nhập Google qua trình duyệt, trả token về 127.0.0.1 của máy hiện tại."""
+    config = load_config()
+    callback_url = "http://127.0.0.1:8765/callback"
+    result_queue = queue.Queue(maxsize=1)
+
+    class OAuthHandler(BaseHTTPRequestHandler):
+        def log_message(self, _format, *_args):
+            return
+
+        def _send(self, status, content, content_type="text/html; charset=utf-8"):
+            body = content.encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self):
+            if self.path.split("?", 1)[0] != "/callback":
+                self._send(404, "Không tìm thấy.")
+                return
+            self._send(200, """<!doctype html><html lang="vi"><meta charset="utf-8">
+<title>Đăng nhập SỸ LAND</title><main><h1>SỸ LAND</h1>
+<p id="status">Đang hoàn tất đăng nhập Google…</p></main><script>
+const values=Object.fromEntries(new URLSearchParams(location.hash.slice(1)));
+fetch('/token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(values)})
+.then(r=>{if(!r.ok)throw new Error();document.getElementById('status').textContent='Đăng nhập thành công. Có thể đóng cửa sổ này.'})
+.catch(()=>document.getElementById('status').textContent='Không hoàn tất được đăng nhập.');
+</script></html>""")
+
+        def do_POST(self):
+            if self.path != "/token":
+                self._send(404, "Không tìm thấy.", "text/plain; charset=utf-8")
+                return
+            try:
+                length = min(int(self.headers.get("Content-Length", "0")), 20000)
+                result_queue.put_nowait(json.loads(self.rfile.read(length).decode("utf-8")))
+                self._send(204, "", "text/plain; charset=utf-8")
+            except Exception:
+                self._send(400, "Dữ liệu không hợp lệ.", "text/plain; charset=utf-8")
+
+    class LoopbackServer(HTTPServer):
+        allow_reuse_address = True
+
+    try:
+        server = LoopbackServer(("127.0.0.1", 8765), OAuthHandler)
+    except OSError as exc:
+        raise AccountError("Không mở được cổng Google 8765. Hãy đóng phiên SỸ LAND khác.") from exc
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    webbrowser.open(f'{config["url"]}/auth/v1/authorize?' + urlencode({
+        "provider": "google", "redirect_to": callback_url,
+    }))
+    try:
+        values = result_queue.get(timeout=max(30, int(timeout)))
+    except queue.Empty as exc:
+        raise AccountError("Đăng nhập Google đã hết thời gian chờ.") from exc
+    finally:
+        server.shutdown()
+        server.server_close()
+    if values.get("error") or values.get("error_description"):
+        raise AccountError(str(values.get("error_description") or values.get("error")))
+    access_token = str(values.get("access_token") or "")
+    if not access_token:
+        raise AccountError("Google chưa trả về phiên hợp lệ.")
+    user = _request("GET", "/user", token=access_token)
+    return {"access_token": access_token, "refresh_token": str(values.get("refresh_token") or ""), "user": user}
 
 
 def sign_up(email, password, full_name=""):
