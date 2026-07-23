@@ -3,7 +3,17 @@
 import { ChangeEvent, useMemo, useRef, useState } from "react";
 
 type Mode = "split" | "merge" | "rotate" | "organize" | "resize" | "annotate" | "optimize" | "compare" | "sanitize" | "ocr" | "compress" | "dedupe" | "toimage" | "imagetopdf" | "crop" | "batch";
-type PagePreview = { page: number; image: string; status?: "ok" | "blank" | "error"; inkRatio?: number; textChars?: number; note?: string };
+type PagePreview = {
+  page: number;
+  image: string;
+  status?: "ok" | "review" | "error";
+  decision?: "unreviewed" | "blank" | "content";
+  inkRatio?: number;
+  textChars?: number;
+  extractedText?: string;
+  ocrText?: string;
+  note?: string;
+};
 type PageComparison = { page: number; similarity: number | null; status: "same" | "review" | "changed" | "missing" | "scan"; note: string };
 type CompareResult = { pagesA: number; pagesB: number; changedPages: number[]; samePages: number; reviewPages: number; scanPages: number; textCoverage: number; details: PageComparison[] };
 type ToolCategory = "all" | "split" | "edit" | "convert" | "review" | "optimize";
@@ -65,6 +75,8 @@ export default function PdfToolkit() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [previews, setPreviews] = useState<PagePreview[]>([]);
+  const [inspectedPage, setInspectedPage] = useState<number | null>(null);
+  const [ocrPage, setOcrPage] = useState<number | null>(null);
   const [removedPages, setRemovedPages] = useState<Set<number>>(new Set());
   const [selectedPages, setSelectedPages] = useState<Set<number>>(new Set());
   const [watermark, setWatermark] = useState("SY LAND");
@@ -84,7 +96,6 @@ export default function PdfToolkit() {
   const [imagePageMode, setImagePageMode] = useState<"a4" | "original">("a4");
   const [cropMargins, setCropMargins] = useState({ top: 0, right: 0, bottom: 0, left: 0 });
   const [batchAction, setBatchAction] = useState<"optimize" | "sanitize" | "rotate">("optimize");
-  const [autoMarkBlank, setAutoMarkBlank] = useState(true);
   const [progress, setProgress] = useState({ current: 0, total: 0, label: "Sẵn sàng" });
   const [paused, setPaused] = useState(false);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
@@ -122,14 +133,14 @@ export default function PdfToolkit() {
   async function renderPreviews(file: File) {
     taskControl.current = { cancelled: false, paused: false }; setPaused(false); setBusy(true);
     setProgress({ current: 0, total: 0, label: "Đang mở và kiểm tra cấu trúc PDF…" });
-    setNotice("Đang kiểm tra trang trắng, trang lỗi và tạo ảnh xem trước…");
+    setNotice("Đang đọc nội dung và tạo bản xem trước để người dùng xác nhận…");
     try {
       const pdfjs = await import("pdfjs-dist");
       const workerUrl = await import("pdfjs-dist/build/pdf.worker.min.mjs?url");
       pdfjs.GlobalWorkerOptions.workerSrc = workerUrl.default;
       const pdfDoc = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
       const next: PagePreview[] = [];
-      const blanks = new Set<number>();
+      let pagesToReview = 0;
       const limit = Math.min(pdfDoc.numPages, mode === "organize" || mode === "split" ? 80 : 8);
       for (let pageNumber = 1; pageNumber <= limit; pageNumber++) {
         await checkpoint();
@@ -144,27 +155,39 @@ export default function PdfToolkit() {
           const context = canvas.getContext("2d", { willReadFrequently: true })!;
           await page.render({ canvas, canvasContext: context, viewport, background: "white" }).promise;
           const text = await page.getTextContent();
-          const textChars = text.items.map((item) => "str" in item ? item.str : "").join("").replace(/\s/g, "").length;
+          const extractedText = text.items.map((item) => "str" in item ? item.str : "").join(" ").replace(/\s+/g, " ").trim();
+          const textChars = extractedText.replace(/\s/g, "").length;
           const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
           let dark = 0; let sampled = 0;
           for (let index = 0; index < pixels.length; index += 16) {
             sampled++; if ((pixels[index] + pixels[index + 1] + pixels[index + 2]) / 3 < 245) dark++;
           }
           const inkRatio = sampled ? dark / sampled : 0;
-          const isBlank = inkRatio < .0025 && textChars < 5;
-          if (isBlank) blanks.add(pageNumber);
-          next.push({ page: pageNumber, image: canvas.toDataURL("image/jpeg", .76), status: isBlank ? "blank" : "ok", inkRatio, textChars, note: isBlank ? "Nghi trang trắng — cần xem trước trước khi xóa" : "Trang đọc bình thường" });
+          const needsReview = inkRatio < .0025 && textChars < 5;
+          if (needsReview) pagesToReview++;
+          next.push({
+            page: pageNumber,
+            image: canvas.toDataURL("image/jpeg", .82),
+            status: needsReview ? "review" : "ok",
+            decision: needsReview ? "unreviewed" : "content",
+            inkRatio,
+            textChars,
+            extractedText,
+            note: needsReview
+              ? "Chưa đủ dữ liệu để kết luận — mở trang, xem nội dung hoặc chạy OCR rồi xác nhận"
+              : `Đã đọc được ${textChars} ký tự hoặc phát hiện nội dung hình ảnh`,
+          });
         } catch (reason) {
           if (reason instanceof Error && reason.message === "SYLAND_TASK_CANCELLED") throw reason;
           next.push({ page: pageNumber, image: "", status: "error", note: reason instanceof Error ? reason.message : "Không render được trang" });
         }
         setPreviews([...next]);
       }
-      setPreviews(next); setRemovedPages(autoMarkBlank ? blanks : new Set()); setSelectedPages(new Set());
+      setPreviews(next); setRemovedPages(new Set()); setSelectedPages(new Set());
       const errors = next.filter((item) => item.status === "error").length;
       const missing = pdfDoc.numPages < 2 ? ` Cảnh báo: tệp chỉ có ${pdfDoc.numPages} trang, thiếu trang ${pdfDoc.numPages < 1 ? "1–2" : "2"}.` : "";
-      setProgress({ current: limit, total: pdfDoc.numPages, label: `Hoàn tất: ${blanks.size} trang nghi trắng · ${errors} trang lỗi` });
-      setNotice(pdfDoc.numPages > 80 ? `Đã kiểm tra 80/${pdfDoc.numPages} trang đầu.${missing}` : `Đã kiểm tra ${pdfDoc.numPages} trang: ${blanks.size} nghi trắng, ${errors} lỗi.${missing}`);
+      setProgress({ current: limit, total: pdfDoc.numPages, label: `Hoàn tất: ${pagesToReview} trang cần xác minh · ${errors} trang lỗi` });
+      setNotice(pdfDoc.numPages > 80 ? `Đã đọc 80/${pdfDoc.numPages} trang đầu.${missing}` : `Đã đọc ${pdfDoc.numPages} trang: ${pagesToReview} trang cần người dùng xác minh, ${errors} lỗi.${missing}`);
     } catch (reason) {
       console.error(reason);
       setNotice(reason instanceof Error && reason.message === "SYLAND_TASK_CANCELLED" ? "Đã hủy kiểm tra. Kết quả một phần vẫn được giữ để xem lại." : "Không tạo được ảnh xem trước của PDF này.");
@@ -193,11 +216,51 @@ export default function PdfToolkit() {
     });
   }
 
-  function changeMode(next: Mode) { taskControl.current.cancelled = true; imagePreviewUrls.current.forEach((url) => URL.revokeObjectURL(url)); imagePreviewUrls.current = []; setImagePreviews([]); setMode(next); setFiles([]); setPreviews([]); setRemovedPages(new Set()); setSelectedPages(new Set()); setCompareResult(null); setDuplicateGroups([]); setDuplicateScanned(false); setProgress({ current: 0, total: 0, label: "Sẵn sàng" }); setPaused(false); setNotice(""); }
+  function changeMode(next: Mode) { taskControl.current.cancelled = true; imagePreviewUrls.current.forEach((url) => URL.revokeObjectURL(url)); imagePreviewUrls.current = []; setImagePreviews([]); setMode(next); setFiles([]); setPreviews([]); setInspectedPage(null); setRemovedPages(new Set()); setSelectedPages(new Set()); setCompareResult(null); setDuplicateGroups([]); setDuplicateScanned(false); setProgress({ current: 0, total: 0, label: "Sẵn sàng" }); setPaused(false); setNotice(""); }
 
   function movePage(index: number, direction: -1 | 1) { setPreviews((current) => { const target = index + direction; if (target < 0 || target >= current.length) return current; const next = [...current]; [next[index], next[target]] = [next[target], next[index]]; return next; }); }
   function toggleRemoved(page: number) { setRemovedPages((current) => { const next = new Set(current); if (next.has(page)) next.delete(page); else next.add(page); return next; }); }
   function toggleSelected(page: number) { setSelectedPages((current) => { const next = new Set(current); if (next.has(page)) next.delete(page); else next.add(page); return next; }); }
+
+  function decidePage(page: number, decision: "blank" | "content") {
+    setPreviews((current) => current.map((item) => item.page === page
+      ? { ...item, decision, note: decision === "blank" ? "Người dùng đã xác nhận đây là trang trắng" : "Người dùng đã xác nhận trang có nội dung và được giữ lại" }
+      : item));
+    setRemovedPages((current) => {
+      const next = new Set(current);
+      if (decision === "content") next.delete(page);
+      return next;
+    });
+  }
+
+  async function readPageWithOcr(pageNumber: number) {
+    if (!files[0]) return;
+    setOcrPage(pageNumber);
+    try {
+      const pdfjs = await import("pdfjs-dist");
+      const workerUrl = await import("pdfjs-dist/build/pdf.worker.min.mjs?url");
+      const { createWorker } = await import("tesseract.js");
+      pdfjs.GlobalWorkerOptions.workerSrc = workerUrl.default;
+      const source = await pdfjs.getDocument({ data: new Uint8Array(await files[0].arrayBuffer()) }).promise;
+      const page = await source.getPage(pageNumber);
+      const base = page.getViewport({ scale: 1 });
+      const viewport = page.getViewport({ scale: Math.min(2.2, 2200 / Math.max(base.width, base.height)) });
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.ceil(viewport.width); canvas.height = Math.ceil(viewport.height);
+      await page.render({ canvas, canvasContext: canvas.getContext("2d", { willReadFrequently: true })!, viewport, background: "white" }).promise;
+      const worker = await createWorker("vie");
+      try {
+        const result = await worker.recognize(canvas);
+        const ocrText = result.data.text.replace(/\s+/g, " ").trim();
+        setPreviews((current) => current.map((item) => item.page === pageNumber
+          ? { ...item, ocrText, decision: ocrText ? "content" : item.decision, note: ocrText ? `OCR đọc được ${ocrText.length} ký tự — trang có nội dung` : "OCR không đọc được chữ; vẫn phải xem hình ảnh trước khi xác nhận" }
+          : item));
+      } finally { await worker.terminate(); }
+    } catch (reason) {
+      console.error(reason);
+      setNotice("Không OCR được trang này. Hãy kiểm tra trực tiếp bằng bản xem trước.");
+    } finally { setOcrPage(null); }
+  }
 
   async function run() {
     if (!files.length) { setNotice("Hãy chọn tệp PDF trước khi xử lý."); return; }
@@ -538,7 +601,7 @@ export default function PdfToolkit() {
             {mode === "merge" && <><h3>Thứ tự nối</h3><div className="merge-list">{files.length ? files.map((file, index) => <div key={`${file.name}-${file.lastModified}`}><span>{index + 1}</span><p><b>{file.name}</b><small>{(file.size / 1024 / 1024).toFixed(1)} MB</small></p><button type="button" onClick={() => move(index, -1)} disabled={index === 0}>↑</button><button type="button" onClick={() => move(index, 1)} disabled={index === files.length - 1}>↓</button><button type="button" onClick={() => setFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))}>×</button></div>) : <p className="pdf-empty">Chưa chọn tệp.</p>}</div></>}
             {mode === "rotate" && <><h3>Góc xoay toàn bộ trang</h3><div className="angle-options">{[90, 180, 270].map((value) => <button className={angle === value ? "active" : ""} type="button" key={value} onClick={() => setAngle(value)}>↻ {value}°</button>)}</div></>}
             {mode === "crop" && <><h3>Cắt lề hiển thị toàn bộ trang</h3><div className="crop-options">{(["top", "right", "bottom", "left"] as const).map((side) => <label key={side}>{side === "top" ? "Lề trên" : side === "right" ? "Lề phải" : side === "bottom" ? "Lề dưới" : "Lề trái"}<input type="number" min="0" max="100" step="1" value={cropMargins[side]} onChange={(event) => setCropMargins((current) => ({ ...current, [side]: Math.min(100, Math.max(0, Number(event.target.value) || 0)) }))} /><span>mm</span></label>)}</div><p className="compression-warning"><b>Lưu ý:</b> Cắt lề chỉ thay đổi vùng hiển thị/in. Nội dung nằm ngoài vùng cắt có thể vẫn còn trong cấu trúc PDF; không dùng chức năng này để che dữ liệu mật.</p></>}
-            {mode === "organize" && <><h3>Kiểm tra, xem trước và xóa trang</h3><div className="pdf-quality-workflow"><ol><li><b>1. Chọn PDF</b><span>Tệp được đọc cục bộ trên thiết bị</span></li><li><b>2. Kiểm tra</b><span>Phát hiện trang trắng, lỗi, thiếu trang 1–2</span></li><li><b>3. Xem trước</b><span>Người dùng xác nhận trang cần xóa</span></li><li><b>4. Xuất bản mới</b><span>Không ghi đè tệp gốc</span></li></ol><div className="pdf-quality-actions"><label><input type="checkbox" checked={autoMarkBlank} onChange={(event) => setAutoMarkBlank(event.target.checked)} /> Tự đánh dấu trang nghi trắng</label><button type="button" disabled={!files[0] || busy} onClick={() => files[0] && void renderPreviews(files[0])}>Quét lại toàn bộ</button><button type="button" disabled={!previews.length || busy} onClick={() => setRemovedPages(new Set())}>Bỏ mọi đánh dấu xóa</button></div></div><div className="page-organizer">{previews.map((item, index) => <article className={`${removedPages.has(item.page) ? "removed" : ""} ${item.status === "blank" ? "suspected-blank" : item.status === "error" ? "page-error" : ""}`} key={item.page}><div>{item.image ? <img src={item.image} alt={`Xem trước trang ${item.page}`} /> : <b className="preview-error">Không xem được</b>}<span>{index + 1}</span>{item.status && item.status !== "ok" && <em>{item.status === "blank" ? "NGHI TRẮNG" : "TRANG LỖI"}</em>}</div><small>Trang gốc {item.page}{typeof item.inkRatio === "number" ? ` · mực/ảnh ${(item.inkRatio * 100).toFixed(2)}% · ${item.textChars || 0} ký tự` : ""}</small><p>{item.note}</p><div><button type="button" onClick={() => movePage(index, -1)} disabled={index === 0 || busy}>←</button><button type="button" onClick={() => movePage(index, 1)} disabled={index === previews.length - 1 || busy}>→</button><button type="button" className="remove-page" disabled={busy} onClick={() => toggleRemoved(item.page)}>{removedPages.has(item.page) ? "Giữ lại" : "Đánh dấu xóa"}</button></div></article>)}</div>{!previews.length && <p className="pdf-empty">Chọn PDF để bắt đầu kiểm tra và tạo ảnh xem trước.</p>}</>}
+            {mode === "organize" && <><h3>Đọc nội dung, xác nhận và chỉnh sửa trang</h3><div className="pdf-quality-workflow"><ol><li><b>1. Chọn PDF</b><span>Tệp được đọc cục bộ trên thiết bị</span></li><li><b>2. Đọc nội dung</b><span>Kiểm tra lớp chữ và hình ảnh từng trang</span></li><li><b>3. Xác nhận</b><span>Người dùng quyết định trắng, giữ lại hoặc xóa</span></li><li><b>4. Xuất bản mới</b><span>Không ghi đè tệp gốc</span></li></ol><div className="pdf-quality-actions"><p>Hệ thống không tự kết luận hoặc tự xóa trang. Hãy mở trang để xem toàn bộ nội dung; dùng OCR khi tài liệu là bản scan.</p><button type="button" disabled={!files[0] || busy} onClick={() => files[0] && void renderPreviews(files[0])}>Đọc lại toàn bộ</button><button type="button" disabled={!previews.length || busy} onClick={() => setRemovedPages(new Set())}>Giữ lại tất cả trang</button></div></div><div className="page-organizer">{previews.map((item, index) => <article className={`${removedPages.has(item.page) ? "removed" : ""} ${item.status === "review" ? "needs-review" : item.status === "error" ? "page-error" : ""} ${item.decision === "blank" ? "confirmed-blank" : ""}`} key={item.page}><button className="page-preview-open" type="button" onClick={() => setInspectedPage(item.page)} aria-label={`Mở xem toàn bộ trang ${item.page}`}>{item.image ? <img src={item.image} alt={`Xem trước trang ${item.page}`} /> : <b className="preview-error">Không xem được</b>}<span>{index + 1}</span>{item.status === "error" ? <em>TRANG LỖI</em> : item.decision === "blank" ? <em>ĐÃ XÁC NHẬN TRẮNG</em> : item.status === "review" ? <em>CẦN XÁC MINH</em> : <em className="has-content">CÓ NỘI DUNG</em>}</button><small>Trang gốc {item.page}{typeof item.inkRatio === "number" ? ` · hình/ảnh ${(item.inkRatio * 100).toFixed(2)}% · ${item.textChars || 0} ký tự` : ""}</small><p>{item.note}</p><div><button type="button" onClick={() => movePage(index, -1)} disabled={index === 0 || busy}>←</button><button type="button" onClick={() => movePage(index, 1)} disabled={index === previews.length - 1 || busy}>→</button><button type="button" className="inspect-page" onClick={() => setInspectedPage(item.page)}>Xem & xác nhận</button></div></article>)}</div>{!previews.length && <p className="pdf-empty">Chọn PDF để đọc nội dung và tạo bản xem trước từng trang.</p>}{inspectedPage !== null && (() => { const item = previews.find((preview) => preview.page === inspectedPage); if (!item) return null; const readableText = item.ocrText || item.extractedText || ""; return <div className="page-inspector" role="dialog" aria-modal="true" aria-label={`Kiểm tra trang ${item.page}`}><div className="page-inspector-panel"><header><div><b>Kiểm tra trang {item.page}</b><small>Chỉ xác nhận trang trắng sau khi đã xem hình ảnh và nội dung đọc được</small></div><button type="button" onClick={() => setInspectedPage(null)} aria-label="Đóng">×</button></header><div className="page-inspector-body"><figure>{item.image ? <img src={item.image} alt={`Toàn bộ trang ${item.page}`} /> : <span>Không dựng được hình ảnh trang</span>}</figure><section><h4>Nội dung đọc được</h4><div className="page-text-content">{readableText || "Chưa đọc được lớp chữ. Nếu đây là PDF scan, hãy nhấn “Đọc OCR trang này” rồi kiểm tra lại hình ảnh."}</div><dl><div><dt>Ký tự lớp chữ</dt><dd>{item.textChars || 0}</dd></div><div><dt>Tỷ lệ hình/mực</dt><dd>{typeof item.inkRatio === "number" ? `${(item.inkRatio * 100).toFixed(3)}%` : "Không xác định"}</dd></div><div><dt>Kết luận</dt><dd>{item.decision === "blank" ? "Đã xác nhận trang trắng" : item.decision === "content" ? "Trang có nội dung/giữ lại" : "Chưa xác nhận"}</dd></div></dl><button className="ocr-page-action" type="button" disabled={ocrPage === item.page} onClick={() => void readPageWithOcr(item.page)}>{ocrPage === item.page ? "Đang OCR…" : "Đọc OCR trang này"}</button></section></div><footer><button type="button" onClick={() => { decidePage(item.page, "content"); setInspectedPage(null); }}>Có nội dung · Giữ lại</button><button type="button" className="confirm-blank" onClick={() => decidePage(item.page, "blank")}>Xác nhận trang trắng</button><button type="button" className="delete-confirmed-page" disabled={item.decision !== "blank"} onClick={() => { setRemovedPages((current) => new Set(current).add(item.page)); setInspectedPage(null); }}>Xóa trang đã xác nhận</button></footer></div></div>; })()}</>}
             {mode === "resize" && <div className="resize-info"><span>A3</span><b>→</b><span>A4</span><div><h3>Chuyển toàn bộ trang về A4</h3><p>Giữ tỷ lệ nội dung, tự nhận hướng dọc/ngang và căn giữa để thuận tiện in hoặc ký số.</p></div></div>}
             {mode === "annotate" && <><h3>Đánh dấu tài liệu</h3><div className="annotate-options"><label className="annotate-check"><input type="checkbox" checked={addWatermark} onChange={(event) => setAddWatermark(event.target.checked)} /><span>Thêm dấu bản quyền</span></label><label>Nội dung dấu<input value={watermark} maxLength={60} disabled={!addWatermark} onChange={(event) => setWatermark(event.target.value)} placeholder="Ví dụ: SỸ LAND - BẢN KIỂM TRA" /><small>Chữ tiếng Việt được tự chuyển sang không dấu để tương thích PDF.</small></label><label className="annotate-check"><input type="checkbox" checked={addNumbers} onChange={(event) => setAddNumbers(event.target.checked)} /><span>Thêm số trang</span></label><div className="number-config"><label>Bắt đầu từ<input type="number" min="1" value={numberStart} disabled={!addNumbers} onChange={(event) => setNumberStart(Math.max(1, Number(event.target.value) || 1))} /></label><label>Vị trí<select value={numberPosition} disabled={!addNumbers} onChange={(event) => setNumberPosition(event.target.value as "bottom" | "top")}><option value="bottom">Giữa chân trang</option><option value="top">Giữa đầu trang</option></select></label></div></div></>}
             {mode === "optimize" && <div className="optimize-info"><span>⇣</span><div><h3>Tối ưu cấu trúc PDF</h3><p>Sắp xếp lại đối tượng và luồng dữ liệu để giảm dung lượng khi có thể. Công cụ không hạ độ phân giải ảnh nên giữ nguyên chất lượng hồ sơ scan.</p><ul><li>Không xóa nội dung</li><li>Không giảm chất lượng ảnh</li><li>Kết quả phụ thuộc cấu trúc tệp gốc</li></ul></div></div>}
