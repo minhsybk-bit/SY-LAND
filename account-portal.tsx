@@ -19,6 +19,7 @@ const BUG_KEY = "sy-land-bug-reports";
 const LICENSE_KEY = "sy-land-test-licenses";
 const ACTIVATION_KEY = "sy-land-test-activations";
 const REMOTE_SESSION_KEY = "sy-land-auth-session";
+const OAUTH_PENDING_KEY = "sy-land-oauth-pending";
 const SUPABASE_URL = String(import.meta.env.VITE_SUPABASE_URL || "").trim().replace(/\/$/, "");
 const SUPABASE_ANON_KEY = String(import.meta.env.VITE_SUPABASE_ANON_KEY || "");
 const AUTH_INPUT_PRESENT = Boolean(SUPABASE_URL || SUPABASE_ANON_KEY);
@@ -28,14 +29,20 @@ const AUTH_CONFIG_ERROR = (AUTH_INPUT_PRESENT && !REMOTE_AUTH) || (import.meta.e
 
 function authRedirectUrl() {
   const basePath = String(import.meta.env.BASE_URL || "/SY-LAND/");
-  return `${new URL(basePath, location.origin).toString()}#tai-khoan`;
+  return new URL(basePath, location.origin).toString();
 }
 
-function oauthRedirectUrl(provider: "google" | "email") {
-  const basePath = String(import.meta.env.BASE_URL || "/SY-LAND/");
-  const url = new URL(basePath, location.origin);
-  url.searchParams.set("oauth", provider);
-  return url.toString();
+function readableAuthError(value: string) {
+  let message = value;
+  try { message = decodeURIComponent(value.replace(/\+/g, " ")); } catch { /* Giữ nguyên lỗi gốc. */ }
+  if (/unable to exchange external code/i.test(message)) {
+    return "Google chưa xác thực được ứng dụng. Client Secret Google trong Supabase không đúng, đã hết hiệu lực hoặc chưa được lưu.";
+  }
+  if (/redirect_uri_mismatch/i.test(message)) {
+    return "Google từ chối URL callback. Hãy thêm đúng URL Supabase /auth/v1/callback trong Google Cloud.";
+  }
+  if (/access_denied/i.test(message)) return "Đăng nhập Google đã bị hủy hoặc tài khoản chưa được phép thử ứng dụng.";
+  return message;
 }
 
 function bytesToHex(bytes: Uint8Array) { return Array.from(bytes).map((value) => value.toString(16).padStart(2, "0")).join(""); }
@@ -174,11 +181,13 @@ export default function AccountPortal() {
       setMode(REMOTE_AUTH ? "login" : storedAccounts.some((account) => account.role === "admin") ? "login" : "setup");
       if (REMOTE_AUTH) {
         const hash = new URLSearchParams(location.hash.replace(/^#/, ""));
+        const query = new URLSearchParams(location.search);
         const recoveryToken = hash.get("access_token");
-        const oauthError = hash.get("error_description") || hash.get("error");
+        const oauthError = hash.get("error_description") || query.get("error_description") || hash.get("error") || query.get("error");
         if (oauthError) {
-          history.replaceState(null, "", location.pathname + location.search);
-          setMessage(`Không đăng nhập được: ${oauthError}`);
+          sessionStorage.removeItem(OAUTH_PENDING_KEY);
+          history.replaceState(null, "", location.pathname);
+          setMessage(`Không đăng nhập được: ${readableAuthError(oauthError)}`);
           return;
         }
         if (hash.get("type") === "recovery" && recoveryToken) {
@@ -196,8 +205,10 @@ export default function AccountPortal() {
             localStorage.setItem(REMOTE_SESSION_KEY, JSON.stringify({ accessToken: recoveryToken, refreshToken, account }));
             setAccounts((items) => [...items.filter((item) => item.id !== account.id), account]);
             setSessionId(account.id);
-            setMessage(new URLSearchParams(location.search).get("oauth") === "email" ? "Đăng nhập bằng liên kết email thành công." : "Đăng nhập bằng Google thành công.");
-            history.replaceState(null, "", location.pathname + location.search);
+            const pendingProvider = sessionStorage.getItem(OAUTH_PENDING_KEY);
+            sessionStorage.removeItem(OAUTH_PENDING_KEY);
+            setMessage(pendingProvider === "email" ? "Đăng nhập bằng liên kết email thành công." : "Đăng nhập bằng Google thành công.");
+            history.replaceState(null, "", location.pathname);
             return;
           } catch (reason) {
             history.replaceState(null, "", location.pathname + location.search);
@@ -249,10 +260,18 @@ export default function AccountPortal() {
 
   function saveAccounts(next: Account[]) { setAccounts(next); localStorage.setItem(ACCOUNT_KEY, JSON.stringify(next)); }
 
-  function signInWithGoogle() {
+  async function signInWithGoogle() {
     if (!REMOTE_AUTH) { setMessage("Máy chủ tài khoản chưa được cấu hình."); return; }
-    const redirectTo = encodeURIComponent(oauthRedirectUrl("google"));
-    location.assign(`${SUPABASE_URL}/auth/v1/authorize?provider=google&redirect_to=${redirectTo}`);
+    setMessage("Đang kiểm tra kết nối Google…");
+    try {
+      const settings = await remoteAuth("/settings", {}, { method: "GET" });
+      if (!settings?.external?.google) throw new Error("Google chưa được bật trong Supabase Authentication Providers.");
+      sessionStorage.setItem(OAUTH_PENDING_KEY, "google");
+      const redirectTo = encodeURIComponent(authRedirectUrl());
+      location.assign(`${SUPABASE_URL}/auth/v1/authorize?provider=google&redirect_to=${redirectTo}`);
+    } catch (reason) {
+      setMessage(reason instanceof Error ? readableAuthError(reason.message) : "Không kiểm tra được kết nối Google.");
+    }
   }
 
   async function sendMagicLink() {
@@ -262,7 +281,8 @@ export default function AccountPortal() {
       return;
     }
     try {
-      const redirectTo = encodeURIComponent(oauthRedirectUrl("email"));
+      const redirectTo = encodeURIComponent(authRedirectUrl());
+      sessionStorage.setItem(OAUTH_PENDING_KEY, "email");
       await remoteAuth(`/otp?redirect_to=${redirectTo}`, {
         email: normalizedEmail,
         create_user: true,
