@@ -449,6 +449,13 @@ h1 span { color: var(--green); }
 .admin-full-access { display: flex; align-items: center; gap: 9px; margin-top: 12px; }
 .admin-full-access b { padding: 5px 8px; border-radius: 999px; color: white; background: var(--green); font-size: 9px; letter-spacing: .08em; }
 .admin-full-access span { color: #466255; font-size: 10px; font-weight: 750; }
+.account-upgrade-card { display: grid; grid-template-columns: 1fr auto; gap: 24px; align-items: center; margin: 18px 25px 0; padding: 22px 24px; border: 1px solid #b8c8bc; color: var(--ink); background: linear-gradient(135deg, #edf5eb, #f8f3e8); }
+.account-upgrade-card span { color: var(--green); font-size: 9px; font-weight: 900; letter-spacing: .12em; }
+.account-upgrade-card h3 { margin: 7px 0; font-size: 18px; line-height: 1.25; }
+.account-upgrade-card p { margin: 0; color: #58675e; font-size: 11px; line-height: 1.55; }
+.account-upgrade-card > div:last-child { display: flex; gap: 8px; }
+.account-upgrade-card button { min-width: 116px; padding: 11px 13px; border: 1px solid var(--green); color: var(--green); background: white; cursor: pointer; font-size: 10px; font-weight: 850; }
+.account-upgrade-card button:last-child { color: white; background: var(--green); }
 @media (max-width: 1100px) {
   .pdf-tool-shell { grid-template-columns: 1fr; }
   .pdf-tool-sidebar { position: static; max-height: none; border-right: 0; border-bottom: 1px solid #d4d8d2; }
@@ -465,6 +472,8 @@ h1 span { color: var(--green); }
   .pdf-pick { min-height: 360px; border-right: 0; border-bottom: 1px solid #d4d8d2; }
   .pdf-options { padding: 24px 16px; }
   .admin-full-access { align-items: flex-start; flex-direction: column; }
+  .account-upgrade-card { grid-template-columns: 1fr; margin: 14px 16px 0; }
+  .account-upgrade-card > div:last-child { flex-wrap: wrap; }
 }
 
 /* Trung tâm Xử lý tệp: điều hướng theo nhiệm vụ, giảm mật độ và hỗ trợ 200 tệp/lượt. */
