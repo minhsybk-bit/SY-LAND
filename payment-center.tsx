@@ -70,7 +70,7 @@ export default function PaymentCenter() {
       if (auth.account?.role === "admin") {
         setActivePlan({ plan: "Quản trị viên · Full Access", expiresAt: "", seatCount: 1, maxParcelsPerRun: null });
       } else {
-        const licenseRows = await rest(`/licenses?select=plan,expires_at,seat_count,max_parcels_per_run&status=eq.${encodeURIComponent("Hoạt động")}&order=expires_at.desc&limit=1`, auth.accessToken);
+        const licenseRows = await rest(`/licenses?select=plan,expires_at,seat_count,max_parcels_per_run&status=eq.${encodeURIComponent("Hoạt động")}&expires_at=gt.${encodeURIComponent(new Date().toISOString())}&order=expires_at.desc&limit=1`, auth.accessToken);
         const license = Array.isArray(licenseRows) ? licenseRows[0] : null;
         setActivePlan(license ? { plan: license.plan, expiresAt: license.expires_at || "", seatCount: Number(license.seat_count || 1), maxParcelsPerRun: license.max_parcels_per_run == null ? null : Number(license.max_parcels_per_run) } : null);
       }
