@@ -519,3 +519,19 @@ h1 span { color: var(--green); }
   .batch-actions > p { grid-column: 1; }
   .batch-table-wrap { max-height: 520px; }
 }
+.payment-history article > b[data-payment-status="Đã hủy"] { color: #66706a; background: #e8ebe8; }
+.current-plan-banner { display: grid; grid-template-columns: minmax(190px,.55fr) 1fr; gap: 24px; align-items: center; margin-top: 22px; padding: 18px 22px; border: 1px solid #9db4a6; background: #edf5ed; }
+.current-plan-banner span, .current-plan-banner strong { display: block; }
+.current-plan-banner span { color: #527060; font-size: 9px; font-weight: 900; letter-spacing: .08em; }
+.current-plan-banner strong { margin-top: 5px; color: var(--green); font-size: 20px; }
+.current-plan-banner p { margin: 0; color: #4d6257; font-size: 11px; line-height: 1.55; }
+.payment-order-actions, .payment-user-actions { display: flex; gap: 7px; }
+.payment-order-actions > button { flex: 1; }
+.payment-order-actions .cancel-payment, .payment-user-actions button { border: 1px solid #b79086; color: #7b4538; background: #fff7f4; cursor: pointer; font-weight: 850; }
+.payment-order-actions .cancel-payment:disabled, .payment-user-actions button:disabled { opacity: .5; cursor: not-allowed; }
+.payment-user-actions button { padding: 8px 10px; font-size: 9px; }
+@media (max-width: 800px) {
+  .current-plan-banner { grid-template-columns: 1fr; gap: 14px; }
+  .payment-user-actions { grid-column: 1 / -1; }
+  .payment-user-actions button { flex: 1; }
+}

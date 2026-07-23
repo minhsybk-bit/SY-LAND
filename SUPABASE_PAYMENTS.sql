@@ -180,8 +180,8 @@ create policy "payment_owner_read" on public.payment_orders for select to authen
 using (user_id = auth.uid() or public.is_syland_admin());
 drop policy if exists "payment_owner_notify" on public.payment_orders;
 create policy "payment_owner_notify" on public.payment_orders for update to authenticated
-using (user_id = auth.uid() and status = 'Chờ thanh toán')
-with check (user_id = auth.uid() and status = 'Chờ xác nhận' and license_code is null and confirmed_by is null);
+using (user_id = auth.uid() and status in ('Chờ thanh toán', 'Chờ xác nhận'))
+with check (user_id = auth.uid() and status in ('Chờ xác nhận', 'Đã hủy') and license_code is null and confirmed_by is null);
 drop policy if exists "payment_admin_update" on public.payment_orders;
 create policy "payment_admin_update" on public.payment_orders for update to authenticated
 using (public.is_syland_admin()) with check (public.is_syland_admin());
@@ -200,7 +200,10 @@ begin
       or new.confirmed_by is distinct from old.confirmed_by or new.confirmed_at is distinct from old.confirmed_at then
       raise exception 'Người dùng chỉ được thông báo đã chuyển khoản';
     end if;
-    if old.status <> 'Chờ thanh toán' or new.status <> 'Chờ xác nhận' then
+    if not (
+      (old.status = 'Chờ thanh toán' and new.status = 'Chờ xác nhận')
+      or (old.status in ('Chờ thanh toán', 'Chờ xác nhận') and new.status = 'Đã hủy')
+    ) then
       raise exception 'Chuyển trạng thái thanh toán không hợp lệ';
     end if;
   end if;
@@ -242,6 +245,19 @@ begin
 end; $$;
 revoke all on function public.admin_confirm_payment(uuid, text) from public;
 grant execute on function public.admin_confirm_payment(uuid, text) to authenticated;
+
+create or replace function public.cancel_my_payment(p_order_id uuid)
+returns setof public.payment_orders language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then raise exception 'Hãy đăng nhập trước khi hủy giao dịch'; end if;
+  return query update public.payment_orders set status = 'Đã hủy'
+    where id = p_order_id and user_id = auth.uid()
+      and status in ('Chờ thanh toán', 'Chờ xác nhận')
+    returning *;
+  if not found then raise exception 'Không tìm thấy giao dịch có thể hủy hoặc giao dịch đã được xử lý'; end if;
+end; $$;
+revoke all on function public.cancel_my_payment(uuid) from public;
+grant execute on function public.cancel_my_payment(uuid) to authenticated;
 
 create or replace function public.audit_payment_change()
 returns trigger language plpgsql security definer set search_path = public as $$

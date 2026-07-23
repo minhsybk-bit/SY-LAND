@@ -96,6 +96,18 @@ def sign_in(email, password):
     return _request("POST", "/token?grant_type=password", {"email": email, "password": password})
 
 
+def sign_out(auth_session=None):
+    """Thu hồi phiên Supabase; không xóa cấu hình hoặc mã bản quyền ngoại tuyến."""
+    access_token = str((auth_session or {}).get("access_token") or "").strip()
+    if not access_token:
+        return {"ok": True, "remote": False}
+    try:
+        _request("POST", "/logout", {}, token=access_token, timeout=10)
+        return {"ok": True, "remote": True}
+    except AccountError:
+        return {"ok": True, "remote": False}
+
+
 def sign_in_with_google(timeout=180):
     """Đăng nhập Google qua trình duyệt, trả token về 127.0.0.1 của máy hiện tại."""
     config = load_config()
