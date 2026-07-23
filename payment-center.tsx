@@ -103,7 +103,7 @@ export default function PaymentCenter() {
       setPaymentConfig(nextConfig);
       setConfigDraft(nextConfig);
       setMessage("Đã lưu cấu hình nhận tiền an toàn trong Supabase. Thông tin không nằm trong mã nguồn GitHub.");
-    } catch (reason) { setMessage(reason instanceof Error ? `Không lưu được: ${reason.message} Hãy chạy SUPABASE_PAYMENTS.sql phiên bản mới.` : "Không lưu được cấu hình nhận tiền."); }
+    } catch (reason) { setMessage(reason instanceof Error ? `Không lưu được: ${reason.message} Hãy chạy toàn bộ tệp SUPABASE_REPAIR_AUTH_PAYMENTS.sql trong một New query.` : "Không lưu được cấu hình nhận tiền."); }
     finally { setBusy(false); }
   }
 
@@ -120,7 +120,7 @@ export default function PaymentCenter() {
       const detail = reason instanceof Error ? reason.message : "";
       const outdatedPlans = /Gói thanh toán không hợp lệ|payment_orders_(plan|amount|duration_months|max_devices|seat_count)_check/i.test(detail);
       setMessage(outdatedPlans
-        ? "Máy chủ thanh toán đang dùng danh sách gói cũ. Quản trị viên cần chạy tệp SUPABASE_PAYMENT_PLANS_FIX.sql một lần trong Supabase SQL Editor."
+        ? "Máy chủ thanh toán đang dùng cấu trúc cũ. Quản trị viên cần chạy toàn bộ tệp SUPABASE_REPAIR_AUTH_PAYMENTS.sql trong một New query của Supabase SQL Editor."
         : detail || "Không tạo được đơn thanh toán. Vui lòng thử lại.");
     }
     finally { setBusy(false); }
@@ -144,7 +144,7 @@ export default function PaymentCenter() {
       const row = Array.isArray(rows) ? rows[0] : rows;
       if (!row) throw new Error("Máy chủ không trả về đơn đã cập nhật. Hãy kiểm tra quyền quản trị và chính sách RLS.");
       const updated = mapPayment(row);
-      if (status === "Đã thanh toán" && (!updated?.licenseCode || updated.status !== "Đã thanh toán")) throw new Error("Máy chủ chưa tạo được mã bản quyền. Hãy chạy lại SUPABASE_PAYMENTS.sql rồi xác nhận lại.");
+      if (status === "Đã thanh toán" && (!updated?.licenseCode || updated.status !== "Đã thanh toán")) throw new Error("Máy chủ chưa tạo được mã bản quyền. Hãy chạy toàn bộ SUPABASE_REPAIR_AUTH_PAYMENTS.sql rồi xác nhận lại.");
       setPayments((items) => items.map((value) => value.id === updated.id ? updated : value));
       setActive((value) => value?.id === updated.id ? updated : value);
       window.dispatchEvent(new Event("syland-payment-updated"));
