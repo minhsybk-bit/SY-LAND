@@ -1,12 +1,8 @@
 -- SỸ LAND: sửa lỗi "Gói thanh toán không hợp lệ".
 -- Chạy TOÀN BỘ tệp này một lần trong Supabase > SQL Editor.
--- Bản vá giữ nguyên đơn cũ, chuẩn hóa tên gói và thay thủ tục tạo đơn đời cũ.
+-- Bản vá KHÔNG cập nhật đơn cũ, nên không kích hoạt trigger cấp bản quyền.
 
 begin;
-
--- Tạm dừng các trigger nghiệp vụ trong đúng giao dịch nâng cấp.
--- Nếu bất kỳ lệnh nào lỗi, transaction rollback sẽ tự khôi phục trạng thái trigger.
-alter table public.payment_orders disable trigger user;
 
 alter table public.payment_orders
   add column if not exists seat_count integer not null default 1;
@@ -17,36 +13,21 @@ alter table public.payment_orders drop constraint if exists payment_orders_durat
 alter table public.payment_orders drop constraint if exists payment_orders_max_devices_check;
 alter table public.payment_orders drop constraint if exists payment_orders_seat_count_check;
 
-update public.payment_orders
-set plan = case lower(trim(plan))
-  when 'cá nhân' then 'Plus'
-  when 'go' then 'Go'
-  when 'plus' then 'Plus'
-  when 'pro' then 'Pro'
-  when 'office' then 'Văn phòng'
-  when 'van phong' then 'Văn phòng'
-  when 'văn phòng' then 'Văn phòng'
-  else plan
-end;
-
-update public.payment_orders
-set seat_count = greatest(2, max_devices)
-where plan = 'Văn phòng' and seat_count < 2;
-
+-- NOT VALID không quét/cập nhật dữ liệu lịch sử nhưng vẫn kiểm tra đơn mới.
 alter table public.payment_orders
   add constraint payment_orders_plan_check
-  check (plan in ('Go', 'Plus', 'Pro', 'Văn phòng'));
+  check (plan in ('Go', 'Plus', 'Pro', 'Văn phòng')) not valid;
 alter table public.payment_orders
-  add constraint payment_orders_amount_check check (amount > 0);
+  add constraint payment_orders_amount_check check (amount > 0) not valid;
 alter table public.payment_orders
   add constraint payment_orders_duration_months_check
-  check (duration_months in (1, 6, 12));
+  check (duration_months in (1, 6, 12)) not valid;
 alter table public.payment_orders
   add constraint payment_orders_max_devices_check
-  check (max_devices between 1 and 500);
+  check (max_devices between 1 and 500) not valid;
 alter table public.payment_orders
   add constraint payment_orders_seat_count_check
-  check (seat_count between 1 and 500);
+  check (seat_count between 1 and 500) not valid;
 
 create or replace function public.prepare_payment_order()
 returns trigger
@@ -119,9 +100,10 @@ create trigger prepare_payment_order_trigger
 before insert on public.payment_orders
 for each row execute procedure public.prepare_payment_order();
 
-alter table public.payment_orders enable trigger user;
-
 commit;
 
--- Kết quả phải trả về 4 dòng: Go, Plus, Pro, Văn phòng.
-select unnest(array['Go', 'Plus', 'Pro', 'Văn phòng']) as goi_da_kich_hoat;
+-- Kết quả phải trả về đúng 1 dòng có trang_thai = THANH_CONG.
+select
+  'THANH_CONG'::text as trang_thai,
+  'Go, Plus, Pro, Văn phòng'::text as goi_da_kich_hoat,
+  'Không cập nhật đơn cũ; không gọi trigger cấp bản quyền'::text as ghi_chu;
