@@ -56,16 +56,27 @@ export default function PaymentCenter() {
       }
       const rows = await rest("/payment_orders?select=id,order_code,plan,amount,seat_count,max_devices,transfer_content,status,license_code,created_at,confirmed_at&order=created_at.desc&limit=100", auth.accessToken);
       const next = Array.isArray(rows) ? rows.map(mapPayment) : [];
-      const paid = next.find((item) => item.status === "Đã thanh toán" && item.licenseCode && knownPayments.current[item.id] && knownPayments.current[item.id] !== "Đã thanh toán");
-      knownPayments.current = Object.fromEntries(next.map((item) => [item.id, item.status]));
+      const previous = knownPayments.current;
+      const paid = next.find((item) => item.status === "Đã thanh toán" && item.licenseCode && knownPayments.current[item.id] && !knownPayments.current[item.id].startsWith("Đã thanh toán:"));
+      const changed = Object.keys(previous).length > 0 && (
+        next.length !== Object.keys(previous).length ||
+        next.some((item) => previous[item.id] !== `${item.status}:${item.licenseCode}`)
+      );
+      knownPayments.current = Object.fromEntries(next.map((item) => [item.id, `${item.status}:${item.licenseCode}`]));
       setPayments(next);
       setActive((value) => paid || (value ? next.find((item) => item.id === value.id) || value : value));
       if (paid) setMessage(`Thanh toán ${paid.orderCode} đã được xác nhận thành công. Mã bản quyền đã gửi vào Trung tâm tài khoản.`);
-      window.dispatchEvent(new Event("syland-payment-updated"));
+      if (changed) window.dispatchEvent(new Event("syland-payment-updated"));
     }
     catch { /* Schema có thể chưa được cài. */ }
   }
-  useEffect(() => { void load(); const timer = window.setInterval(() => void load(), 30000); return () => window.clearInterval(timer); }, []);
+  useEffect(() => {
+    const refresh = () => { if (document.visibilityState === "visible") void load(); };
+    refresh();
+    const timer = window.setInterval(refresh, 60000);
+    document.addEventListener("visibilitychange", refresh);
+    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", refresh); };
+  }, []);
   useEffect(() => {
     const selectPlan = (event: Event) => {
       const next = (event as CustomEvent<{ plan?: string }>).detail?.plan;
@@ -153,7 +164,7 @@ export default function PaymentCenter() {
     setMessage("Đã chuyển đến Trung tâm tài khoản. Mở thông báo mới để nhận và kích hoạt mã bản quyền.");
   }
 
-  return <section className="payment-center" id="thanh-toan" aria-labelledby="payment-title"><div className="payment-heading"><div><p className="section-kicker">Chọn gói và thanh toán</p><h2 id="payment-title">Đúng nhu cầu.<br />Không mua thừa.</h2></div><p>Nhập quy mô sử dụng để SỸ LAND đề xuất gói kinh tế phù hợp. Người dùng vẫn được xem đầy đủ giá, thời hạn, mức tiết kiệm và chủ động đổi lựa chọn trước khi tạo đơn.</p></div>
+  return <section className="payment-center" aria-labelledby="payment-title"><div className="payment-heading"><div><p className="section-kicker">Chọn gói và thanh toán</p><h2 id="payment-title">Đúng nhu cầu.<br />Không mua thừa.</h2></div><p>Nhập quy mô sử dụng để SỸ LAND đề xuất gói kinh tế phù hợp. Người dùng vẫn được xem đầy đủ giá, thời hạn, mức tiết kiệm và chủ động đổi lựa chọn trước khi tạo đơn.</p></div>
     {!configured && <p className="payment-warning">Thanh toán đang tạm khóa vì chưa có cấu hình nhận tiền trong Supabase. Quản trị viên đăng nhập và nhập thông tin bên dưới một lần.</p>}
     {isAdmin && <div className="payment-secure-config"><header><div><b>Cấu hình nhận tiền bảo mật</b><small>Lưu trong Supabase; không ghi vào GitHub. Người chưa đăng nhập không đọc được.</small></div><span>{configured ? "ĐÃ CẤU HÌNH" : "CHƯA CẤU HÌNH"}</span></header><div><label>Mã BIN VietQR<input value={configDraft.bankBin} inputMode="numeric" maxLength={6} onChange={(event) => setConfigDraft((value) => ({ ...value, bankBin: event.target.value.replace(/\D/g, "") }))} placeholder="6 chữ số" /></label><label>Tên ngân hàng<input value={configDraft.bankName} onChange={(event) => setConfigDraft((value) => ({ ...value, bankName: event.target.value }))} placeholder="Tên ngân hàng" /></label><label>Số tài khoản<input value={configDraft.accountNumber} inputMode="numeric" onChange={(event) => setConfigDraft((value) => ({ ...value, accountNumber: event.target.value.replace(/\D/g, "") }))} placeholder="Số tài khoản nhận tiền" /></label><label>Chủ tài khoản<input value={configDraft.accountName} onChange={(event) => setConfigDraft((value) => ({ ...value, accountName: event.target.value }))} placeholder="VIẾT HOA KHÔNG DẤU" /></label><label>Số hỗ trợ (tùy chọn)<input value={configDraft.supportPhone} onChange={(event) => setConfigDraft((value) => ({ ...value, supportPhone: event.target.value }))} placeholder="Chỉ dùng số hỗ trợ kinh doanh" /></label><button type="button" disabled={busy} onClick={() => void savePaymentConfig()}>{busy ? "Đang lưu…" : "Lưu an toàn"}</button></div>{message && <p className="payment-config-message" role="status">{message}</p>}</div>}
     <div className="plan-advisor"><div><label>Số người sử dụng<input type="number" min="1" max="500" value={people} onChange={(event) => setPeople(Math.max(1, Math.min(500, Number(event.target.value) || 1)))} /></label><label>Số thửa cần xử lý/lượt<input type="number" min="1" value={volume} onChange={(event) => setVolume(Math.max(1, Number(event.target.value) || 1))} /></label><label>Ngân sách/tháng<input type="number" min="0" step="50000" value={budget} onChange={(event) => setBudget(Math.max(0, Number(event.target.value) || 0))} /></label></div><aside><span>GỢI Ý PHÙ HỢP</span><strong>Gói {recommendation === "office" ? "Văn phòng" : recommendation[0].toUpperCase() + recommendation.slice(1)}</strong><p>{recommendation === "go" ? "Tối đa 80 thửa/lượt và 40% công cụ." : recommendation === "plus" ? "Tối đa 140 thửa/lượt và 70% công cụ." : recommendation === "pro" ? "Tối đa 200 thửa/lượt, đầy đủ công cụ." : people >= 5 ? `${people} tài khoản, đầy đủ công cụ và không giới hạn thửa/lượt.` : `${people} tài khoản, quyền tương đương Plus.`}</p>{budget < (recommendation === "go" ? 99000 : recommendation === "plus" ? 199000 : recommendation === "pro" ? 399000 : 298000 * officeSeats) && <small>Ngân sách hiện thấp hơn giá tháng. Có thể chọn gói thấp hơn hoặc liên hệ để được tư vấn.</small>}<button type="button" onClick={applyRecommendation}>Chọn gói đề xuất</button></aside></div>
