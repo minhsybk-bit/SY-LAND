@@ -463,3 +463,46 @@ h1 span { color: var(--green); }
   .pdf-options { padding: 24px 16px; }
   .admin-full-access { align-items: flex-start; flex-direction: column; }
 }
+
+/* Trung tâm Xử lý tệp: điều hướng theo nhiệm vụ, giảm mật độ và hỗ trợ 200 tệp/lượt. */
+.file-workspace-head { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 28px; align-items: end; margin-bottom: 14px; padding: 24px; border: 1px solid #c9cfc8; background: #eef3eb; }
+.file-workspace-head h3 { margin: 8px 0 7px; color: var(--ink); font-size: clamp(24px,3vw,34px); letter-spacing: -.035em; }
+.file-workspace-head p { margin: 0; color: #65716a; font-size: 12px; line-height: 1.55; }
+.file-workspace-head nav { display: grid; grid-template-columns: repeat(2,minmax(140px,1fr)); gap: 7px; }
+.file-workspace-head a { padding: 11px 13px; border: 1px solid #b8c4ba; border-radius: 5px; color: var(--green); background: white; text-align: center; font-size: 10px; font-weight: 850; }
+.file-workspace-head a:hover { color: white; border-color: var(--green); background: var(--green); }
+.processor-shell, .batch-shell, .local-history, #doi-chieu-du-lieu { scroll-margin-top: 24px; }
+.location-profile summary { min-height: 72px; }
+.processor-grid { grid-template-columns: minmax(300px,.7fr) minmax(0,1.3fr); }
+.batch-shell { padding: 30px; }
+.batch-heading { align-items: center; }
+.batch-summary { grid-template-columns: auto 1fr; min-width: 190px; }
+.batch-toolbar { display: grid; grid-template-columns: repeat(4,minmax(150px,1fr)); align-items: end; gap: 10px; }
+.batch-toolbar label { min-width: 0; }
+.batch-toolbar select, .batch-toolbar input:not([type="file"]) { width: 100%; min-width: 0; }
+.batch-toolbar .batch-ocr-toggle { min-height: 62px; padding: 10px; border: 1px solid #cbd1ca; background: white; }
+.batch-toolbar .secondary-action, .batch-toolbar .batch-add { width: 100%; min-height: 42px; margin: 0; }
+.batch-capacity-notice { margin: 10px 0 0; padding: 10px 12px; border-left: 4px solid var(--green); color: #476055; background: #eaf3e9; font-size: 11px; line-height: 1.5; }
+.rename-workflow-note { margin-top: 16px; }
+.master-panel { margin-top: 18px; }
+.batch-list-controls { position: sticky; z-index: 4; top: 0; }
+.batch-table-wrap { max-height: 620px; }
+.batch-table thead th { position: sticky; z-index: 3; top: 0; }
+.batch-actions { display: grid; grid-template-columns: repeat(3,minmax(190px,1fr)); align-items: stretch; gap: 9px; }
+.batch-actions .button { width: 100%; min-width: 0; min-height: 46px; justify-content: space-between; }
+.batch-actions > p { grid-column: 1 / -1; margin: 0; }
+@media (max-width: 1180px) {
+  .file-workspace-head { grid-template-columns: 1fr; }
+  .file-workspace-head nav { grid-template-columns: repeat(4,1fr); }
+  .processor-grid { grid-template-columns: 1fr; }
+  .batch-toolbar { grid-template-columns: repeat(2,minmax(160px,1fr)); }
+  .batch-actions { grid-template-columns: repeat(2,minmax(180px,1fr)); }
+}
+@media (max-width: 700px) {
+  .file-workspace-head { padding: 20px 16px; }
+  .file-workspace-head nav { grid-template-columns: 1fr 1fr; }
+  .batch-shell { padding: 22px 14px; }
+  .batch-toolbar, .batch-actions { grid-template-columns: 1fr; }
+  .batch-actions > p { grid-column: 1; }
+  .batch-table-wrap { max-height: 520px; }
+}
