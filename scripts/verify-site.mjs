@@ -56,6 +56,7 @@ const schemaSql = readFileSync(join(root, "SUPABASE_SCHEMA.sql"), "utf8");
 const paymentSql = readFileSync(join(root, "SUPABASE_PAYMENTS.sql"), "utf8");
 const paymentFix = readFileSync(join(root, "SUPABASE_PAYMENT_PLANS_FIX.sql"), "utf8");
 const repairSql = readFileSync(join(root, "SUPABASE_REPAIR_AUTH_PAYMENTS.sql"), "utf8");
+const stableAccountSql = readFileSync(join(root, "SUPABASE_STABLE_ACCOUNT_SYNC.sql"), "utf8");
 assert(
   schemaSql.includes('create policy "profile_self_read"') &&
     schemaSql.includes("id = auth.uid() or public.is_syland_admin()"),
@@ -90,6 +91,26 @@ assert(repairSql.includes("drop trigger if exists issue_paid_license_trigger"), 
 assert(!repairSql.includes("update public.payment_orders\nset plan"), "Bản phục hồi không chuẩn hóa/cập nhật đơn lịch sử");
 assert(repairSql.includes("create trigger issue_paid_license_trigger"), "Bản phục hồi tạo lại trigger cấp mã");
 assert(repairSql.includes("admin_ready"), "Bản phục hồi tự kiểm tra quyền quản trị");
+assert(
+  stableAccountSql.includes("get_my_syland_entitlements") &&
+    stableAccountSql.includes("link_license_to_auth_user_trigger"),
+  "Website và Windows dùng cùng nguồn quyền theo auth.users.id"
+);
+assert(
+  accountPortal.includes('remoteData("/rpc/get_my_syland_entitlements"') &&
+    accountPortal.includes("serverEntitlements || resolveEntitlements"),
+  "Website ưu tiên quyền chuẩn từ máy chủ"
+);
+assert(
+  !accountPortal.includes("code_challenge: challenge") &&
+    accountPortal.includes('sessionStorage.removeItem(OAUTH_VERIFIER_KEY)'),
+  "Google OAuth dùng phiên do Supabase quản lý"
+);
+assert(
+  accountPortal.includes('currentEntitlements.plan !== "Dùng thử"') &&
+    accountPortal.includes('currentEntitlements.role === "admin" ? "Không giới hạn"'),
+  "Gói quản trị hiển thị hoạt động và không giới hạn"
+);
 
 console.log(`SỸ LAND verification: ${pass.length} kiểm tra đạt.`);
 if (failures.length) {
