@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-export type SylandPlan = "Dùng thử" | "Go" | "Plus" | "Pro" | "Văn phòng" | "Đơn vị";
+export type SylandPlan = "Dùng thử" | "Go" | "Plus" | "Pro" | "Văn phòng" | "Đơn vị" | "Quản trị viên";
 export type EntitlementSnapshot = {
   role: "admin" | "user" | "guest";
   plan: SylandPlan;
@@ -22,7 +22,7 @@ export function resolveEntitlements(input: { role?: string; plan?: string; seats
   const seats = Math.max(1, Math.floor(Number(input.seats) || 1));
   const raw = String(input.plan || "Dùng thử").toLocaleLowerCase("vi-VN");
   const plan: SylandPlan = raw.includes("văn phòng") ? "Văn phòng" : raw.includes("đơn vị") ? "Đơn vị" : raw.includes("pro") ? "Pro" : raw.includes("plus") || raw === "cá nhân" ? "Plus" : raw.includes("go") ? "Go" : "Dùng thử";
-  if (role === "admin") return { role, plan: "Đơn vị", seats, featurePercent: 100, maxParcelsPerRun: null, maxFileSizeMB: 100, maxTotalUploadMB: 2000, maxUsesPerDay: null, fullTools: true, reason: "Quản trị viên SỸ LAND · không giới hạn" };
+  if (role === "admin") return { role, plan: "Quản trị viên", seats, featurePercent: 100, maxParcelsPerRun: null, maxFileSizeMB: 100, maxTotalUploadMB: 2000, maxUsesPerDay: null, fullTools: true, reason: "Quản trị viên SỸ LAND · không giới hạn" };
 
   let featurePercent = 25, accountLimit: number | null = role === "guest" ? 5 : 50, maxFileSizeMB = role === "guest" ? 10 : 20;
   let maxTotalUploadMB = role === "guest" ? 25 : 150, maxUsesPerDay: number | null = role === "guest" ? 3 : 10;
