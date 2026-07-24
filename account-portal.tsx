@@ -47,7 +47,7 @@ function readableAuthError(value: string) {
 }
 
 function bytesToHex(bytes: Uint8Array) { return Array.from(bytes).map((value) => value.toString(16).padStart(2, "0")).join(""); }
-function base64Url(bytes: Uint8Array) { return btoa(String.fromCharCode(...bytes)).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/g, ""); }
+function base64Url(bytes: Uint8Array) { return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, ""); }
 function oauthVerifier() { return base64Url(crypto.getRandomValues(new Uint8Array(48))); }
 async function oauthChallenge(verifier: string) { return base64Url(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)))); }
 function randomSalt() { const bytes = crypto.getRandomValues(new Uint8Array(16)); return bytesToHex(bytes); }
