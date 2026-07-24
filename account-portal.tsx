@@ -20,6 +20,7 @@ const LICENSE_KEY = "sy-land-test-licenses";
 const ACTIVATION_KEY = "sy-land-test-activations";
 const REMOTE_SESSION_KEY = "sy-land-auth-session";
 const OAUTH_PENDING_KEY = "sy-land-oauth-pending";
+const OAUTH_VERIFIER_KEY = "sy-land-oauth-pkce-verifier";
 const SUPABASE_URL = String(import.meta.env.VITE_SUPABASE_URL || "").trim().replace(/\/$/, "");
 const SUPABASE_ANON_KEY = String(import.meta.env.VITE_SUPABASE_ANON_KEY || "");
 const AUTH_INPUT_PRESENT = Boolean(SUPABASE_URL || SUPABASE_ANON_KEY);
@@ -46,6 +47,9 @@ function readableAuthError(value: string) {
 }
 
 function bytesToHex(bytes: Uint8Array) { return Array.from(bytes).map((value) => value.toString(16).padStart(2, "0")).join(""); }
+function base64Url(bytes: Uint8Array) { return btoa(String.fromCharCode(...bytes)).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/g, ""); }
+function oauthVerifier() { return base64Url(crypto.getRandomValues(new Uint8Array(48))); }
+async function oauthChallenge(verifier: string) { return base64Url(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)))); }
 function randomSalt() { const bytes = crypto.getRandomValues(new Uint8Array(16)); return bytesToHex(bytes); }
 async function hashPassword(password: string, salt: string) { return bytesToHex(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${salt}:${password}`)))); }
 function downloadJson(data: unknown, name: string) { const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" })); const anchor = document.createElement("a"); anchor.href = url; anchor.download = name; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
@@ -183,12 +187,37 @@ export default function AccountPortal() {
         const hash = new URLSearchParams(location.hash.replace(/^#/, ""));
         const query = new URLSearchParams(location.search);
         const recoveryToken = hash.get("access_token");
+        const oauthCode = query.get("code");
         const oauthError = hash.get("error_description") || query.get("error_description") || hash.get("error") || query.get("error");
         if (oauthError) {
           sessionStorage.removeItem(OAUTH_PENDING_KEY);
+          sessionStorage.removeItem(OAUTH_VERIFIER_KEY);
           history.replaceState(null, "", location.pathname);
           setMessage(`Không đăng nhập được: ${readableAuthError(oauthError)}`);
           return;
+        }
+        if (oauthCode) {
+          try {
+            const verifier = sessionStorage.getItem(OAUTH_VERIFIER_KEY);
+            if (!verifier) throw new Error("Phiên đăng nhập Google không còn hiệu lực. Hãy nhấn Tiếp tục bằng Google và thử lại.");
+            const data = await remoteAuth("/token?grant_type=pkce", { auth_code: oauthCode, code_verifier: verifier });
+            if (!data?.access_token || !data?.user) throw new Error("Máy chủ Google chưa trả về phiên đăng nhập hợp lệ.");
+            const account = await hydrateRemoteAccount(data.user, data.access_token);
+            localStorage.setItem(REMOTE_SESSION_KEY, JSON.stringify({ accessToken: data.access_token, refreshToken: data.refresh_token || "", account }));
+            setAccounts((items) => [...items.filter((item) => item.id !== account.id), account]);
+            setSessionId(account.id);
+            sessionStorage.removeItem(OAUTH_PENDING_KEY);
+            sessionStorage.removeItem(OAUTH_VERIFIER_KEY);
+            history.replaceState(null, "", location.pathname);
+            setMessage("Đăng nhập bằng Google thành công.");
+            return;
+          } catch (reason) {
+            sessionStorage.removeItem(OAUTH_PENDING_KEY);
+            sessionStorage.removeItem(OAUTH_VERIFIER_KEY);
+            history.replaceState(null, "", location.pathname);
+            setMessage(reason instanceof Error ? `Không đăng nhập được: ${readableAuthError(reason.message)}` : "Không hoàn tất được đăng nhập Google.");
+            return;
+          }
         }
         if (hash.get("type") === "recovery" && recoveryToken) {
           localStorage.setItem(REMOTE_SESSION_KEY, JSON.stringify({ accessToken: recoveryToken, refreshToken: hash.get("refresh_token") || "", account: remoteAccount || null }));
@@ -207,6 +236,7 @@ export default function AccountPortal() {
             setSessionId(account.id);
             const pendingProvider = sessionStorage.getItem(OAUTH_PENDING_KEY);
             sessionStorage.removeItem(OAUTH_PENDING_KEY);
+            sessionStorage.removeItem(OAUTH_VERIFIER_KEY);
             setMessage(pendingProvider === "email" ? "Đăng nhập bằng liên kết email thành công." : "Đăng nhập bằng Google thành công.");
             history.replaceState(null, "", location.pathname);
             return;
@@ -266,9 +296,18 @@ export default function AccountPortal() {
     try {
       const settings = await remoteAuth("/settings", {}, { method: "GET" });
       if (!settings?.external?.google) throw new Error("Google chưa được bật trong Supabase Authentication Providers.");
+      const verifier = oauthVerifier();
+      const challenge = await oauthChallenge(verifier);
       sessionStorage.setItem(OAUTH_PENDING_KEY, "google");
-      const redirectTo = encodeURIComponent(authRedirectUrl());
-      location.assign(`${SUPABASE_URL}/auth/v1/authorize?provider=google&redirect_to=${redirectTo}`);
+      sessionStorage.setItem(OAUTH_VERIFIER_KEY, verifier);
+      const parameters = new URLSearchParams({
+        provider: "google",
+        redirect_to: authRedirectUrl(),
+        code_challenge: challenge,
+        code_challenge_method: "s256",
+        scopes: "openid email profile",
+      });
+      location.assign(`${SUPABASE_URL}/auth/v1/authorize?${parameters.toString()}`);
     } catch (reason) {
       setMessage(reason instanceof Error ? readableAuthError(reason.message) : "Không kiểm tra được kết nối Google.");
     }
