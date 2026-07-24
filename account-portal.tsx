@@ -2,7 +2,7 @@
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { TERMS_VERSION } from "./legal-center";
-import { publishEntitlements, resolveEntitlements, SylandPlan } from "./entitlements";
+import { EntitlementSnapshot, publishEntitlements, resolveEntitlements, SylandPlan } from "./entitlements";
 
 type Account = { id: string; name: string; email: string; passwordHash: string; salt: string; role: "admin" | "user"; createdAt: string };
 type BugReport = { id: string; title: string; area: string; severity: string; steps: string; expected: string; actual: string; createdAt: string; status: "Mới" | "Đang kiểm tra" | "Đã xử lý" };
@@ -47,9 +47,6 @@ function readableAuthError(value: string) {
 }
 
 function bytesToHex(bytes: Uint8Array) { return Array.from(bytes).map((value) => value.toString(16).padStart(2, "0")).join(""); }
-function base64Url(bytes: Uint8Array) { return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, ""); }
-function oauthVerifier() { return base64Url(crypto.getRandomValues(new Uint8Array(48))); }
-async function oauthChallenge(verifier: string) { return base64Url(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)))); }
 function randomSalt() { const bytes = crypto.getRandomValues(new Uint8Array(16)); return bytesToHex(bytes); }
 async function hashPassword(password: string, salt: string) { return bytesToHex(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${salt}:${password}`)))); }
 function downloadJson(data: unknown, name: string) { const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" })); const anchor = document.createElement("a"); anchor.href = url; anchor.download = name; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
@@ -82,6 +79,30 @@ async function remoteData(path: string, accessToken: string, options: { method?:
   return data;
 }
 
+async function fetchCanonicalEntitlements(accessToken: string) {
+  try {
+    return await remoteData("/rpc/get_my_syland_entitlements", accessToken, { method: "POST", payload: {} });
+  } catch {
+    return null;
+  }
+}
+
+function entitlementFromServer(value: any): EntitlementSnapshot | null {
+  if (!value?.ok) return null;
+  return {
+    role: value.role === "admin" ? "admin" : "user",
+    plan: value.plan as SylandPlan,
+    seats: Math.max(1, Number(value.seat_count) || 1),
+    featurePercent: Number(value.feature_percent) || 25,
+    maxParcelsPerRun: value.max_parcels_per_run == null ? null : Number(value.max_parcels_per_run),
+    maxFileSizeMB: Number(value.max_file_size_mb) || 20,
+    maxTotalUploadMB: Number(value.max_total_upload_mb) || 150,
+    maxUsesPerDay: value.max_uses_per_day == null ? null : Number(value.max_uses_per_day),
+    fullTools: Boolean(value.full_tools),
+    reason: String(value.reason || "Đã đồng bộ quyền từ SỸ LAND."),
+  };
+}
+
 function accountFromRemoteUser(user: any): Account {
   return { id: user.id, name: user.user_metadata?.full_name || user.email?.split("@")[0] || "Người dùng SỸ LAND", email: user.email || "", passwordHash: "", salt: "", role: user.app_metadata?.role === "admin" ? "admin" : "user", createdAt: user.created_at || new Date().toISOString() };
 }
@@ -104,6 +125,7 @@ export default function AccountPortal() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [paymentNotices, setPaymentNotices] = useState<PaymentNotice[]>([]);
+  const [serverEntitlements, setServerEntitlements] = useState<EntitlementSnapshot | null>(null);
   const [licenseDraft, setLicenseDraft] = useState({ customer: "", email: "", plan: "Go" as License["plan"], months: 12, maxDevices: 1, seatCount: 1, maxParcelsPerRun: 80 });
   const [activationCode, setActivationCode] = useState("");
   const configInputRef = useRef<HTMLInputElement>(null);
@@ -118,12 +140,13 @@ export default function AccountPortal() {
     const license = licenses.find((item) => item.code === code);
     return license && license.status === "Hoạt động" && new Date(license.expiresAt) >= new Date() ? license : null;
   }, [current, activations, licenses]);
-  const currentEntitlements = useMemo(() => resolveEntitlements({
+  const currentEntitlements = useMemo(() => serverEntitlements || resolveEntitlements({
     role: current?.role,
     plan: activeLicense?.plan,
     seats: activeLicense?.seatCount || activeLicense?.maxDevices || 1,
     licenseMaxParcels: activeLicense?.maxParcelsPerRun,
-  }), [current, activeLicense]);
+  }), [current, activeLicense, serverEntitlements]);
+  const hasActivePlan = currentEntitlements.role === "admin" || currentEntitlements.plan !== "Dùng thử";
 
   useEffect(() => {
     publishEntitlements(currentEntitlements);
@@ -138,22 +161,25 @@ export default function AccountPortal() {
     setLicenses([]);
     setDevices([]);
     setPaymentNotices([]);
+    setServerEntitlements(null);
     setAuditEvents([]);
     setLeads([]);
     setTickets([]);
     let account = accountFromRemoteUser(user);
     try {
-      const [profiles, rows, deviceRows, paymentRows] = await Promise.all([
+      const [profiles, rows, deviceRows, paymentRows, entitlement] = await Promise.all([
         remoteData(`/profiles?id=eq.${encodeURIComponent(user.id)}&select=id,full_name,email,role,created_at`, accessToken),
         remoteData(`/licenses?select=id,code,customer,email,plan,expires_at,status,created_at,max_devices,seat_count,max_parcels_per_run&order=created_at.desc`, accessToken),
         remoteData(`/device_activations?select=id,license_id,device_hash,device_name,app_version,status,first_seen_at,last_seen_at&order=last_seen_at.desc`, accessToken),
         remoteData(`/payment_orders?select=id,order_code,plan,status,license_code,created_at,confirmed_at&order=created_at.desc&limit=200`, accessToken),
+        fetchCanonicalEntitlements(accessToken),
       ]);
       const profile = Array.isArray(profiles) ? profiles[0] : null;
       if (profile) account = { ...account, name: profile.full_name || account.name, email: profile.email || account.email, role: profile.role === "admin" ? "admin" : "user", createdAt: profile.created_at || account.createdAt };
       if (Array.isArray(rows)) setLicenses(rows.map((item: any) => ({ id: item.id, code: item.code, customer: item.customer, email: item.email, plan: item.plan, expiresAt: item.expires_at, status: item.status, createdAt: item.created_at, maxDevices: item.max_devices, seatCount: item.seat_count, maxParcelsPerRun: item.max_parcels_per_run })));
       if (Array.isArray(deviceRows)) setDevices(deviceRows.map((item: any) => ({ id: item.id, licenseId: item.license_id, deviceHash: item.device_hash, deviceName: item.device_name, appVersion: item.app_version, status: item.status, firstSeenAt: item.first_seen_at, lastSeenAt: item.last_seen_at })));
       if (Array.isArray(paymentRows)) setPaymentNotices(paymentRows.map((item: any) => ({ id: item.id, orderCode: item.order_code, plan: item.plan, status: item.status, licenseCode: item.license_code || "", createdAt: item.created_at, confirmedAt: item.confirmed_at || "" })));
+      setServerEntitlements(entitlementFromServer(entitlement));
       if (profile?.role === "admin") {
         const [eventRows, leadRows, ticketRows] = await Promise.all([
           remoteData(`/audit_events?select=id,action,entity_type,entity_id,details,created_at&order=created_at.desc&limit=200`, accessToken),
@@ -267,12 +293,14 @@ export default function AccountPortal() {
     if (!REMOTE_AUTH || !remoteToken || !current) return;
     async function refreshEntitlements() {
       try {
-        const [licenseRows, paymentRows] = await Promise.all([
+        const [licenseRows, paymentRows, entitlement] = await Promise.all([
           remoteData(`/licenses?select=id,code,customer,email,plan,expires_at,status,created_at,max_devices,seat_count,max_parcels_per_run&order=created_at.desc`, remoteToken),
           remoteData(`/payment_orders?select=id,order_code,plan,status,license_code,created_at,confirmed_at&order=created_at.desc&limit=500`, remoteToken),
+          fetchCanonicalEntitlements(remoteToken),
         ]);
         if (Array.isArray(licenseRows)) setLicenses(licenseRows.map((item: any) => ({ id: item.id, code: item.code, customer: item.customer, email: item.email, plan: item.plan, expiresAt: item.expires_at, status: item.status, createdAt: item.created_at, maxDevices: item.max_devices, seatCount: item.seat_count, maxParcelsPerRun: item.max_parcels_per_run })));
         if (Array.isArray(paymentRows)) setPaymentNotices(paymentRows.map((item: any) => ({ id: item.id, orderCode: item.order_code, plan: item.plan, status: item.status, licenseCode: item.license_code || "", createdAt: item.created_at, confirmedAt: item.confirmed_at || "" })));
+        setServerEntitlements(entitlementFromServer(entitlement));
       } catch { /* Giữ dữ liệu hiện tại nếu mạng tạm gián đoạn. */ }
     }
     const onPaymentUpdated = () => void refreshEntitlements();
@@ -296,15 +324,11 @@ export default function AccountPortal() {
     try {
       const settings = await remoteAuth("/settings", {}, { method: "GET" });
       if (!settings?.external?.google) throw new Error("Google chưa được bật trong Supabase Authentication Providers.");
-      const verifier = oauthVerifier();
-      const challenge = await oauthChallenge(verifier);
       sessionStorage.setItem(OAUTH_PENDING_KEY, "google");
-      sessionStorage.setItem(OAUTH_VERIFIER_KEY, verifier);
+      sessionStorage.removeItem(OAUTH_VERIFIER_KEY);
       const parameters = new URLSearchParams({
         provider: "google",
         redirect_to: authRedirectUrl(),
-        code_challenge: challenge,
-        code_challenge_method: "s256",
         scopes: "openid email profile",
       });
       location.assign(`${SUPABASE_URL}/auth/v1/authorize?${parameters.toString()}`);
@@ -563,7 +587,7 @@ export default function AccountPortal() {
           <form className="bug-form" onSubmit={saveReport}><h3>Ghi nhận lỗi kiểm thử</h3><label>Tên lỗi<input value={report.title} onChange={(event) => setReport((value) => ({ ...value, title: event.target.value }))} placeholder="Mô tả ngắn gọn" /></label><div><label>Khu vực<select value={report.area} onChange={(event) => setReport((value) => ({ ...value, area: event.target.value }))}><option>Xử lý PDF</option><option>Word/PDF/Excel</option><option>Địa bàn và mã xã</option><option>Đổi tên hàng loạt</option><option>Đối chiếu Excel</option><option>Đăng nhập</option><option>Giao diện</option><option>Khác</option></select></label><label>Mức độ<select value={report.severity} onChange={(event) => setReport((value) => ({ ...value, severity: event.target.value }))}><option>Thấp</option><option>Trung bình</option><option>Cao</option><option>Nghiêm trọng</option></select></label></div><label>Các bước tái hiện<textarea value={report.steps} onChange={(event) => setReport((value) => ({ ...value, steps: event.target.value }))} placeholder="1. Mở… 2. Chọn… 3. Nhấn…" /></label><label>Kết quả mong muốn<textarea value={report.expected} onChange={(event) => setReport((value) => ({ ...value, expected: event.target.value }))} /></label><label>Kết quả thực tế<textarea value={report.actual} onChange={(event) => setReport((value) => ({ ...value, actual: event.target.value }))} /></label><button type="submit">Lưu báo cáo lỗi</button></form>
           <div className="bug-list"><h3>Danh sách lỗi gần đây</h3>{!reports.length ? <p>Chưa có lỗi được ghi nhận.</p> : reports.slice(0, 20).map((item) => <article key={item.id}><div><span className={`severity ${item.severity.toLocaleLowerCase("vi-VN")}`}>{item.severity}</span><strong>{item.title}</strong><small>{item.area} · {new Date(item.createdAt).toLocaleString("vi-VN")}</small></div><select value={item.status} onChange={(event) => updateReport(item.id, event.target.value as BugReport["status"])}><option>Mới</option><option>Đang kiểm tra</option><option>Đã xử lý</option></select></article>)}</div>
         </div>
-      </div> : <div className="user-test-panel"><div className="user-profile-summary"><div className="user-avatar" aria-hidden="true">{current.name.trim().charAt(0).toUpperCase()}</div><div><span>HỒ SƠ NGƯỜI DÙNG</span><strong>{current.name}</strong><small>{current.email} · Thành viên từ {new Date(current.createdAt).toLocaleDateString("vi-VN")}</small></div><a href="#thanh-toan">Quản lý gói</a></div><section className={`account-current-plan ${activeLicense ? "is-active" : "is-trial"}`} aria-label="Gói đang sử dụng"><header><div><span>GÓI ĐANG SỬ DỤNG</span><strong>{currentEntitlements.plan}</strong></div><b>{activeLicense ? "ĐANG HOẠT ĐỘNG" : "DÙNG THỬ"}</b></header><div className="account-plan-details"><article><small>Hạn sử dụng</small><strong>{activeLicense ? new Date(activeLicense.expiresAt).toLocaleDateString("vi-VN") : "Chưa đăng ký"}</strong></article><article><small>Số tài khoản</small><strong>{currentEntitlements.seats}</strong></article><article><small>Hạn mức mỗi lần</small><strong>{currentEntitlements.maxParcelsPerRun == null ? "Không giới hạn" : `${currentEntitlements.maxParcelsPerRun} thửa`}</strong></article><article><small>Quyền công cụ</small><strong>{currentEntitlements.featurePercent}%</strong></article></div><p>{currentEntitlements.reason}</p><a href="#thanh-toan">{activeLicense ? "Quản lý hoặc gia hạn gói" : "Chọn gói phù hợp"}</a></section><div className="account-notification-head"><div><span>TRUNG TÂM THÔNG BÁO</span><h3>{activeLicense ? `Bản quyền ${activeLicense.plan} đang hoạt động` : "Tài khoản SỸ LAND đã sẵn sàng"}</h3></div><b>{paymentNotices.filter((item) => item.licenseCode).length}</b></div>{paymentNotices.length > 0 && <div className="account-notifications">{paymentNotices.slice(0, 8).map((item) => <article className={item.licenseCode ? "license-ready" : ""} key={item.id}><span aria-hidden="true">{item.licenseCode ? "✓" : "…"}</span><div><strong>{item.licenseCode ? "Mã bản quyền đã được cấp" : `Đơn ${item.status.toLocaleLowerCase("vi-VN")}`}</strong><small>{item.orderCode} · Gói {item.plan} · {new Date(item.createdAt).toLocaleString("vi-VN")}</small>{item.licenseCode && <code>{item.licenseCode}</code>}</div>{item.licenseCode && <div className="notification-actions"><button type="button" onClick={() => void copyLicense(item.licenseCode)}>Sao chép</button><button type="button" onClick={() => void activateFromNotice(item.licenseCode)}>Kích hoạt ngay</button></div>}</article>)}</div>}{activeLicense ? <div className="activated-license"><span>ĐÃ KÍCH HOẠT TRÊN TÀI KHOẢN</span><strong>{activeLicense.code}</strong><p>Cấp cho {activeLicense.email} · {activeLicense.maxDevices || 1} thiết bị · Hết hạn {new Date(activeLicense.expiresAt).toLocaleDateString("vi-VN")}</p><div className="activated-actions"><button type="button" onClick={() => void copyLicense(activeLicense.code)}>Sao chép mã</button><button type="button" onClick={() => void activateFromNotice(activeLicense.code)}>Mở phần mềm và kích hoạt</button></div></div> : <><p>Bạn có thể sử dụng các công cụ công khai hoặc nhập mã bản quyền do quản trị viên cấp.</p><form className="activation-form" onSubmit={activateLicense}><label>Mã bản quyền<input value={activationCode} onChange={(event) => setActivationCode(event.target.value.toUpperCase())} placeholder="SYL-XXXXX-XXXXX" /></label><button type="submit">Kích hoạt mã</button></form></>}<section className="configuration-transfer"><div><span>ĐỒNG BỘ CẤU HÌNH</span><h3>Chuyển cấu hình giữa website và phần mềm</h3><p>Xuất địa bàn, đơn vị hành chính và tùy chọn nghiệp vụ ra JSON; sau đó nhập vào SỸ LAND trên thiết bị khác. Không xuất mật khẩu, phiên đăng nhập hoặc mã bản quyền.</p></div><input ref={configInputRef} type="file" accept="application/json,.json" onChange={(event) => void importConfiguration(event)} /><div className="configuration-actions"><button type="button" onClick={exportConfiguration}>Xuất cấu hình</button><button type="button" onClick={() => configInputRef.current?.click()}>Nhập từ phần mềm</button></div>{configMessage && <p role="status">{configMessage}</p>}<small>Định dạng dùng chung: syland-config · schema_version 1 · UTF-8 JSON</small></section><div className="account-quick-actions"><a href="#minh-hoa">Mở công cụ</a><a href="#cong-cu-pdf">Công cụ PDF</a><a href="#tai-phan-mem">Tải phần mềm</a><a href="#thanh-toan">Thanh toán</a></div><small>{REMOTE_AUTH ? "Bản quyền được gắn theo email và tự đồng bộ giữa website với phần mềm SỸ LAND khi đăng nhập." : "Chế độ cục bộ chưa đồng bộ dữ liệu giữa các thiết bị."}</small></div>}
+      </div> : <div className="user-test-panel"><div className="user-profile-summary"><div className="user-avatar" aria-hidden="true">{current.name.trim().charAt(0).toUpperCase()}</div><div><span>HỒ SƠ NGƯỜI DÙNG</span><strong>{current.name}</strong><small>{current.email} · Thành viên từ {new Date(current.createdAt).toLocaleDateString("vi-VN")}</small></div><a href="#thanh-toan">Quản lý gói</a></div><section className={`account-current-plan ${hasActivePlan ? "is-active" : "is-trial"}`} aria-label="Gói đang sử dụng"><header><div><span>GÓI ĐANG SỬ DỤNG</span><strong>{currentEntitlements.plan}</strong></div><b>{hasActivePlan ? "ĐANG HOẠT ĐỘNG" : "DÙNG THỬ"}</b></header><div className="account-plan-details"><article><small>Hạn sử dụng</small><strong>{currentEntitlements.role === "admin" ? "Không giới hạn" : activeLicense ? new Date(activeLicense.expiresAt).toLocaleDateString("vi-VN") : "Chưa đăng ký"}</strong></article><article><small>Số tài khoản</small><strong>{currentEntitlements.seats}</strong></article><article><small>Hạn mức mỗi lần</small><strong>{currentEntitlements.maxParcelsPerRun == null ? "Không giới hạn" : `${currentEntitlements.maxParcelsPerRun} thửa`}</strong></article><article><small>Quyền công cụ</small><strong>{currentEntitlements.featurePercent}%</strong></article></div><p>{currentEntitlements.reason}</p><a href="#thanh-toan">{hasActivePlan ? "Quản lý hoặc gia hạn gói" : "Chọn gói phù hợp"}</a></section><div className="account-notification-head"><div><span>TRUNG TÂM THÔNG BÁO</span><h3>{hasActivePlan ? `Gói ${currentEntitlements.plan} đang hoạt động` : "Tài khoản SỸ LAND đã sẵn sàng"}</h3></div><b>{paymentNotices.filter((item) => item.licenseCode).length}</b></div>{paymentNotices.length > 0 && <div className="account-notifications">{paymentNotices.slice(0, 8).map((item) => <article className={item.licenseCode ? "license-ready" : ""} key={item.id}><span aria-hidden="true">{item.licenseCode ? "✓" : "…"}</span><div><strong>{item.licenseCode ? "Mã bản quyền đã được cấp" : `Đơn ${item.status.toLocaleLowerCase("vi-VN")}`}</strong><small>{item.orderCode} · Gói {item.plan} · {new Date(item.createdAt).toLocaleString("vi-VN")}</small>{item.licenseCode && <code>{item.licenseCode}</code>}</div>{item.licenseCode && <div className="notification-actions"><button type="button" onClick={() => void copyLicense(item.licenseCode)}>Sao chép</button><button type="button" onClick={() => void activateFromNotice(item.licenseCode)}>Kích hoạt ngay</button></div>}</article>)}</div>}{activeLicense ? <div className="activated-license"><span>ĐÃ KÍCH HOẠT TRÊN TÀI KHOẢN</span><strong>{activeLicense.code}</strong><p>Cấp cho {activeLicense.email} · {activeLicense.maxDevices || 1} thiết bị · Hết hạn {new Date(activeLicense.expiresAt).toLocaleDateString("vi-VN")}</p><div className="activated-actions"><button type="button" onClick={() => void copyLicense(activeLicense.code)}>Sao chép mã</button><button type="button" onClick={() => void activateFromNotice(activeLicense.code)}>Mở phần mềm và kích hoạt</button></div></div> : <><p>Bạn có thể sử dụng các công cụ công khai hoặc nhập mã bản quyền do quản trị viên cấp.</p><form className="activation-form" onSubmit={activateLicense}><label>Mã bản quyền<input value={activationCode} onChange={(event) => setActivationCode(event.target.value.toUpperCase())} placeholder="SYL-XXXXX-XXXXX" /></label><button type="submit">Kích hoạt mã</button></form></>}<section className="configuration-transfer"><div><span>ĐỒNG BỘ CẤU HÌNH</span><h3>Chuyển cấu hình giữa website và phần mềm</h3><p>Xuất địa bàn, đơn vị hành chính và tùy chọn nghiệp vụ ra JSON; sau đó nhập vào SỸ LAND trên thiết bị khác. Không xuất mật khẩu, phiên đăng nhập hoặc mã bản quyền.</p></div><input ref={configInputRef} type="file" accept="application/json,.json" onChange={(event) => void importConfiguration(event)} /><div className="configuration-actions"><button type="button" onClick={exportConfiguration}>Xuất cấu hình</button><button type="button" onClick={() => configInputRef.current?.click()}>Nhập từ phần mềm</button></div>{configMessage && <p role="status">{configMessage}</p>}<small>Định dạng dùng chung: syland-config · schema_version 1 · UTF-8 JSON</small></section><div className="account-quick-actions"><a href="#minh-hoa">Mở công cụ</a><a href="#cong-cu-pdf">Công cụ PDF</a><a href="#tai-phan-mem">Tải phần mềm</a><a href="#thanh-toan">Thanh toán</a></div><small>{REMOTE_AUTH ? "Bản quyền được gắn theo tài khoản và tự đồng bộ giữa website với phần mềm SỸ LAND khi đăng nhập." : "Chế độ cục bộ chưa đồng bộ dữ liệu giữa các thiết bị."}</small></div>}
       {message && <p className="account-message">{message}</p>}
     </section>
   );
