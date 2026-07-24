@@ -1,16 +1,16 @@
 {
   "app_name": "SỸ LAND",
-  "latest_version": "11.6.3",
-  "release_date": "2026-07-20",
-  "download_url": "https://github.com/minhsybk-bit/SY-LAND/releases/download/v11.6.3/SYLAND_Setup_11.6.3.zip",
-  "release_page_url": "https://github.com/minhsybk-bit/SY-LAND/releases/tag/v11.6.3",
+  "latest_version": "11.6.8",
+  "release_date": "2026-07-24",
+  "download_url": "https://github.com/minhsybk-bit/SY-LAND/releases/download/v11.6.8/SYLAND_Setup_11.6.8.zip",
+  "release_page_url": "https://github.com/minhsybk-bit/SY-LAND/releases/latest",
   "website_download_url": "https://minhsybk-bit.github.io/SY-LAND/#tai-phan-mem",
-  "sha256": "ecfc1b0ce1023beb29438a39c34d91b3f74571105c17a46f3b7d5ebcb14849c3",
+  "sha256": "",
   "release_notes": [
-    "Sửa đồng bộ nhận diện phiên bản giữa phần mềm và bộ cài",
-    "Cải thiện kiểm tra và thông báo cập nhật trực tiếp",
-    "Sửa đường dẫn xác nhận email tài khoản trên GitHub Pages",
-    "Cải thiện độ ổn định của tài khoản, bản quyền và công cụ PDF"
+    "Sửa tên Word/PDF bị thêm .0 sau số tờ và số thửa",
+    "Giữ nguyên số tờ lâm nghiệp dài 110000, 210000 và 310000",
+    "Tối ưu tài nguyên, giải phóng Word và tránh khóa thư mục ở Tab 7e",
+    "Sửa thanh tiến độ Word sang PDF, hoàn tất đúng 100%"
   ],
   "force_update": false
 }
