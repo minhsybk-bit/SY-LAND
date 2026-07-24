@@ -102,6 +102,16 @@ assert(
   "Website ưu tiên quyền chuẩn từ máy chủ"
 );
 assert(
+  accountPortal.includes('await remoteAuth("/logout"') &&
+    accountPortal.includes("localStorage.removeItem(REMOTE_SESSION_KEY)"),
+  "Đăng xuất thu hồi phiên máy chủ và xóa phiên cục bộ"
+);
+assert(
+  stableAccountSql.includes("'schema_version', 2") &&
+    stableAccountSql.includes("'recommended_upgrade'"),
+  "RPC quyền chuẩn có phiên bản chính sách và gợi ý nâng cấp"
+);
+assert(
   !accountPortal.includes("code_challenge: challenge") &&
     accountPortal.includes('sessionStorage.removeItem(OAUTH_VERIFIER_KEY)'),
   "Google OAuth dùng phiên do Supabase quản lý"

@@ -1,4 +1,4 @@
--- SỸ LAND 11.6.9 - đồng bộ ổn định tài khoản/gói cho Website và Windows.
+-- SỸ LAND 11.7.0 - một tài khoản, một nguồn gói cho Website và Windows.
 -- Chạy TOÀN BỘ một lần trong Supabase Dashboard > SQL Editor.
 -- Có thể chạy lại an toàn; không xóa tài khoản, đơn hàng hoặc mã bản quyền.
 
@@ -164,12 +164,13 @@ begin
 
   if v_role = 'admin' or v_email = 'minhsybk@gmail.com' then
     return jsonb_build_object(
-      'ok', true, 'schema_version', 1, 'user_id', v_uid, 'email', v_email,
+      'ok', true, 'schema_version', 2, 'user_id', v_uid, 'email', v_email,
       'role', 'admin', 'plan', 'Quản trị viên', 'status', 'Hoạt động',
       'expires_at', null, 'seat_count', null, 'max_devices', null,
       'max_parcels_per_run', null, 'feature_percent', 100,
       'max_file_size_mb', 100, 'max_total_upload_mb', 2000,
       'max_uses_per_day', null, 'full_tools', true,
+      'recommended_upgrade', null,
       'reason', 'Quản trị viên SỸ LAND · Full Access',
       'source', 'profiles.role'
     );
@@ -222,7 +223,7 @@ begin
   end if;
 
   return jsonb_build_object(
-    'ok', true, 'schema_version', 1, 'user_id', v_uid, 'email', v_email,
+    'ok', true, 'schema_version', 2, 'user_id', v_uid, 'email', v_email,
     'role', 'user', 'license_id', v_license.id, 'license_code', v_license.code,
     'plan', v_plan, 'status', case when v_license.id is null then 'Dùng thử' else v_license.status end,
     'expires_at', v_license.expires_at, 'seat_count', v_seats,
@@ -230,7 +231,14 @@ begin
     'max_parcels_per_run', v_limit, 'feature_percent', v_percent,
     'max_file_size_mb', v_file_mb, 'max_total_upload_mb', v_total_mb,
     'max_uses_per_day', case when v_license.id is null then 10 else null end,
-    'full_tools', v_full, 'reason', v_reason,
+    'full_tools', v_full,
+    'recommended_upgrade', case
+      when v_plan = 'Dùng thử' then 'Go'
+      when v_plan = 'Go' then 'Plus'
+      when v_plan = 'Plus' then 'Pro'
+      else null
+    end,
+    'reason', v_reason,
     'source', case when v_license.id is null then 'trial' else 'licenses' end
   );
 end;
