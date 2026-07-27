@@ -14,7 +14,9 @@ GitHub Issue, Pull Request hoặc cửa sổ chat.
 - [x] Không nhận cookie nền tảng hoặc API key AI từ trình duyệt.
 - [x] Tách API CPU, worker GPU, Redis và scheduler dọn tệp.
 - [x] Mỗi tài khoản chỉ đọc dữ liệu của chính mình bằng Supabase RLS.
+- [x] Trình duyệt bị thu hồi quyền ghi trực tiếp vào toàn bộ bảng Creator.
 - [x] Giữ, sử dụng và hoàn hạn mức phút bằng RPC có khóa giao dịch.
+- [x] Phút hoàn ở thời điểm giao tháng không làm sai hạn mức tháng mới.
 - [x] Liên kết tải MP4 có chữ ký và thời hạn ngắn.
 - [x] Thông báo lỗi công khai không chứa API key, đường dẫn hoặc log nội bộ.
 - [x] Kiểm tra cấu trúc bản dịch AI trước khi tạo giọng đọc.

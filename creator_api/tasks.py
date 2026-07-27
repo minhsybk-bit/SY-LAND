@@ -22,6 +22,8 @@ def process_video_task(self, job_id: str) -> None:
     job = database.get_job_with_project(job_id)
     if not job:
         return
+    if job.get("status") in {"completed", "failed", "cancelled"}:
+        return
 
     job_dir = (settings.creator_storage_dir / job_id).resolve()
     storage_root = settings.creator_storage_dir.resolve()

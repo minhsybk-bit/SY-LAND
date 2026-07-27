@@ -108,13 +108,7 @@ create policy "creator_project_owner_read" on public.creator_projects
 for select using (user_id = auth.uid() or public.is_syland_admin());
 
 drop policy if exists "creator_project_owner_insert" on public.creator_projects;
-create policy "creator_project_owner_insert" on public.creator_projects
-for insert with check (user_id = auth.uid());
-
 drop policy if exists "creator_project_owner_update" on public.creator_projects;
-create policy "creator_project_owner_update" on public.creator_projects
-for update using (user_id = auth.uid() or public.is_syland_admin())
-with check (user_id = auth.uid() or public.is_syland_admin());
 
 drop policy if exists "creator_job_owner_read" on public.creator_jobs;
 create policy "creator_job_owner_read" on public.creator_jobs
@@ -128,6 +122,23 @@ for select using (user_id = auth.uid() or public.is_syland_admin());
 drop policy if exists "creator_limits_authenticated_read" on public.creator_plan_limits;
 create policy "creator_limits_authenticated_read" on public.creator_plan_limits
 for select to authenticated using (true);
+
+-- Supabase có thể cấp quyền bảng mặc định cho anon/authenticated. Creator chỉ
+-- cho trình duyệt đọc dữ liệu qua RLS; mọi thao tác ghi phải đi qua API sử dụng
+-- service_role và các RPC hạn mức đã khóa bên dưới.
+revoke all on public.creator_projects from anon, authenticated;
+revoke all on public.creator_jobs from anon, authenticated;
+revoke all on public.creator_usage_ledger from anon, authenticated;
+revoke all on public.creator_plan_limits from anon, authenticated;
+grant select on public.creator_projects to authenticated;
+grant select on public.creator_jobs to authenticated;
+grant select on public.creator_usage_ledger to authenticated;
+grant select on public.creator_plan_limits to authenticated;
+grant all on public.creator_projects to service_role;
+grant all on public.creator_jobs to service_role;
+grant all on public.creator_usage_ledger to service_role;
+grant all on public.creator_plan_limits to service_role;
+grant usage, select on sequence public.creator_usage_ledger_id_seq to service_role;
 
 create or replace function public.creator_reserve_minutes(
   p_job_id uuid,
@@ -189,17 +200,18 @@ begin
     raise exception 'CREATOR_VIDEO_TOO_LONG_FOR_PLAN';
   end if;
 
-  select coalesce(sum(
-    case
-      when event_type = 'reserve' then minutes
-      when event_type = 'refund' then -minutes
-      else 0
-    end
-  ), 0)
+  select coalesce(sum(reserve_entry.minutes), 0)
   into v_used
-  from public.creator_usage_ledger
-  where user_id = v_user_id
-    and created_at >= date_trunc('month', now());
+  from public.creator_usage_ledger reserve_entry
+  where reserve_entry.user_id = v_user_id
+    and reserve_entry.event_type = 'reserve'
+    and reserve_entry.created_at >= date_trunc('month', now())
+    and not exists (
+      select 1
+      from public.creator_usage_ledger refund_entry
+      where refund_entry.job_id = reserve_entry.job_id
+        and refund_entry.event_type = 'refund'
+    );
 
   if v_used + p_minutes > v_limit then
     raise exception 'CREATOR_QUOTA_EXCEEDED';

@@ -170,5 +170,28 @@ class PublicErrorTests(unittest.TestCase):
         )
 
 
+class CreatorMigrationSecurityTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.sql = Path("SUPABASE_CREATOR.sql").read_text(encoding="utf-8").lower()
+
+    def test_browser_roles_are_read_only(self) -> None:
+        self.assertNotIn('create policy "creator_project_owner_insert"', self.sql)
+        self.assertNotIn('create policy "creator_project_owner_update"', self.sql)
+        for table in (
+            "creator_projects",
+            "creator_jobs",
+            "creator_usage_ledger",
+            "creator_plan_limits",
+        ):
+            self.assertIn(f"revoke all on public.{table} from anon, authenticated;", self.sql)
+            self.assertIn(f"grant select on public.{table} to authenticated;", self.sql)
+
+    def test_monthly_usage_counts_unrefunded_reservations(self) -> None:
+        self.assertIn("reserve_entry.event_type = 'reserve'", self.sql)
+        self.assertIn("refund_entry.event_type = 'refund'", self.sql)
+        self.assertIn("and not exists", self.sql)
+
+
 if __name__ == "__main__":
     unittest.main()
