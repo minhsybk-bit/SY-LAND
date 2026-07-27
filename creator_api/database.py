@@ -67,6 +67,9 @@ class Database:
         settings: dict,
         input_object_key: str | None = None,
     ) -> dict:
+        ownership_status = str(rights_evidence.get("ownership") or "unverified")
+        if ownership_status not in {"verified", "declared", "unverified"}:
+            ownership_status = "unverified"
         project = self.insert(
             "creator_projects",
             {
@@ -76,7 +79,7 @@ class Database:
                 "source_url": source_url,
                 "source_platform": source_platform,
                 "source_visibility": source_visibility,
-                "ownership_status": "declared",
+                "ownership_status": ownership_status,
                 "rights_status": rights_evidence.get("risk", "medium"),
                 "rights_evidence": rights_evidence,
                 "rights_confirmed_at": datetime.now(timezone.utc).isoformat(),

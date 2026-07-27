@@ -7,26 +7,12 @@ from pathlib import Path
 from .celery_app import celery_app
 from .config import get_settings
 from .database import Database
+from .errors import public_error
 from .pipeline import download_video, probe_duration, process_media
 
 
 class JobCancelled(RuntimeError):
     pass
-
-
-def public_error(error: Exception) -> str:
-    text = str(error)
-    known = {
-        "CREATOR_QUOTA_EXCEEDED": "Bạn đã dùng hết số phút Creator của tháng này.",
-        "CREATOR_VIDEO_TOO_LONG_FOR_PLAN": "Video vượt thời lượng tối đa của gói hiện tại.",
-        "CREATOR_PLAN_NOT_CONFIGURED": "Gói tài khoản chưa được cấu hình cho Creator.",
-    }
-    for marker, message in known.items():
-        if marker in text:
-            return message
-    if "private" in text.lower() or "login" in text.lower():
-        return "Nguồn riêng tư hoặc cần đăng nhập không được xử lý."
-    return text[:1500] or "Tác vụ xử lý thất bại."
 
 
 @celery_app.task(name="creator.process_video", bind=True, max_retries=1)

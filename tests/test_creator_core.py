@@ -8,9 +8,11 @@ from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 
 from creator_api.media_validation import valid_video_signature
+from creator_api.errors import public_error
 from creator_api.preflight import parse_env_file, validate_environment
 from creator_api.signing import signed_download_url, valid_download_signature
 from creator_api.source_policy import SourceUrlError, parse_source_url, platform_for_host
+from creator_api.translation_validation import validated_translations
 
 
 class SourcePolicyTests(unittest.TestCase):
@@ -131,6 +133,41 @@ class CreatorPreflightTests(unittest.TestCase):
             path = Path(directory) / ".env.creator"
             path.write_text("ENVIRONMENT=staging\nSECRET='literal-$VALUE'\n", encoding="utf-8")
             self.assertEqual(parse_env_file(path)["SECRET"], "literal-$VALUE")
+
+
+class TranslationValidationTests(unittest.TestCase):
+    def test_translation_rows_must_match_expected_ids(self) -> None:
+        self.assertEqual(
+            validated_translations(
+                [{"id": 1, "vi": "Xin chào"}, {"id": 2, "vi": "Cảm ơn"}],
+                {1, 2},
+            ),
+            {1: "Xin chào", 2: "Cảm ơn"},
+        )
+        invalid_rows = (
+            [{"id": 1, "vi": ""}],
+            [{"id": 3, "vi": "Ngoài phạm vi"}],
+            [{"id": 1, "vi": "Một"}, {"id": 1, "vi": "Hai"}],
+            [{"id": "không-phải-số", "vi": "Lỗi"}],
+            [{"id": 1}],
+        )
+        for rows in invalid_rows:
+            with self.subTest(rows=rows), self.assertRaises(RuntimeError):
+                validated_translations(rows, {1, 2})
+
+
+class PublicErrorTests(unittest.TestCase):
+    def test_secrets_and_internal_paths_are_not_returned(self) -> None:
+        sensitive = RuntimeError(
+            "Provider failed with sk-secret-value while reading /data/creator/private-file.mp4"
+        )
+        message = public_error(sensitive)
+        self.assertNotIn("sk-secret-value", message)
+        self.assertNotIn("/data/creator", message)
+        self.assertEqual(
+            public_error(RuntimeError("CREATOR_QUOTA_EXCEEDED: details")),
+            "Bạn đã dùng hết số phút Creator của tháng này.",
+        )
 
 
 if __name__ == "__main__":

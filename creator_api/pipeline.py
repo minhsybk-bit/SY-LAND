@@ -11,10 +11,9 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable
 
-from pydub import AudioSegment
-
 from .config import Settings
 from .sources import validate_source_url
+from .translation_validation import validated_translations
 
 
 Progress = Callable[[str, int], None]
@@ -212,8 +211,8 @@ def translate(
     for index, batch in enumerate(batches):
         prompt = _prompt(batch, language)
         rows = _translate_openai(prompt, settings) if provider == "openai" else _translate_gemini(prompt, settings)
-        for row in rows:
-            translated[int(row["id"])] = str(row["vi"]).strip()
+        expected_ids = {int(item["id"]) for item in batch}
+        translated.update(validated_translations(rows, expected_ids))
         progress("translating", 45 + round((index + 1) / len(batches) * 15))
     missing = [item["id"] for item in segments if item["id"] not in translated]
     if missing:
@@ -252,6 +251,8 @@ def build_dub(
     workdir: Path,
     progress: Progress,
 ) -> Path:
+    from pydub import AudioSegment
+
     preset = VOICE_PRESETS[voice]
     master = AudioSegment.silent(duration=math.ceil(duration * 1000) + 500, frame_rate=44100).set_channels(2)
     for index, segment in enumerate(segments):
