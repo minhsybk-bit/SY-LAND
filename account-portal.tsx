@@ -33,6 +33,19 @@ function authRedirectUrl() {
   return new URL(basePath, location.origin).toString();
 }
 
+function base64UrlEncode(bytes: Uint8Array) {
+  let binary = "";
+  bytes.forEach((value) => { binary += String.fromCharCode(value); });
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+async function createPkcePair() {
+  // RFC 7636: verifier 43–128 ký tự; challenge = BASE64URL(SHA256(verifier)).
+  const verifier = base64UrlEncode(crypto.getRandomValues(new Uint8Array(48)));
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
+  return { verifier, challenge: base64UrlEncode(new Uint8Array(digest)) };
+}
+
 function readableAuthError(value: string) {
   let message = value;
   try { message = decodeURIComponent(value.replace(/\+/g, " ")); } catch { /* Giữ nguyên lỗi gốc. */ }
@@ -324,12 +337,15 @@ export default function AccountPortal() {
     try {
       const settings = await remoteAuth("/settings", {}, { method: "GET" });
       if (!settings?.external?.google) throw new Error("Google chưa được bật trong Supabase Authentication Providers.");
+      const pkce = await createPkcePair();
       sessionStorage.setItem(OAUTH_PENDING_KEY, "google");
-      sessionStorage.removeItem(OAUTH_VERIFIER_KEY);
+      sessionStorage.setItem(OAUTH_VERIFIER_KEY, pkce.verifier);
       const parameters = new URLSearchParams({
         provider: "google",
         redirect_to: authRedirectUrl(),
         scopes: "openid email profile",
+        code_challenge: pkce.challenge,
+        code_challenge_method: "s256",
       });
       location.assign(`${SUPABASE_URL}/auth/v1/authorize?${parameters.toString()}`);
     } catch (reason) {
