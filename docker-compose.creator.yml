@@ -5,6 +5,11 @@ services:
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - creator_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
   api:
     build:
@@ -14,11 +19,18 @@ services:
     env_file: .env.creator
     command: ["python3", "-m", "uvicorn", "creator_api.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - creator_media:/data/creator
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   worker:
     build:
@@ -30,7 +42,8 @@ services:
     volumes:
       - creator_media:/data/creator
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     deploy:
       resources:
         reservations:
@@ -49,7 +62,8 @@ services:
     volumes:
       - creator_media:/data/creator
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
 
 volumes:
   creator_media:

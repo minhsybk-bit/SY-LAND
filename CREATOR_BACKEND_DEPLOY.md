@@ -55,7 +55,21 @@ Sao chép `.env.creator.example` thành `.env.creator`, rồi điền:
 
 Không gửi các khóa này qua chat và không commit `.env.creator` lên GitHub.
 
-## 3. Khởi động
+Trước khi khởi động, chạy bộ kiểm tra an toàn. Công cụ chỉ báo tên biến bị lỗi,
+không in giá trị API key ra màn hình:
+
+```bash
+python scripts/check-creator-env.py .env.creator
+```
+
+Chỉ tiếp tục khi nhận thông báo `Cấu hình Creator hợp lệ`.
+
+## 3. Khởi động staging
+
+Trong `.env.creator`, đặt `ENVIRONMENT=staging` và dùng tên miền API thử nghiệm
+riêng. Không thêm `VITE_SYLAND_CREATOR_API_URL` vào GitHub Pages ở giai đoạn này.
+API Compose chỉ lắng nghe tại `127.0.0.1:8000`; Nginx/Caddy trên cùng máy chủ là
+điểm duy nhất được công khai qua HTTPS.
 
 Để thử nghiệm all-in-one, trên máy chủ đã cài Docker, NVIDIA Driver và NVIDIA
 Container Toolkit:
@@ -83,7 +97,10 @@ curl https://creator-api.ten-mien-cua-ban.vn/ready
 
 Ba mục `storage`, `database`, `queue` đều phải là `true`.
 
-## 4. Nối website
+Chỉ chuyển sang `ENVIRONMENT=production` sau khi `/ready` đạt và đã thử nghiệm
+thành công bộ video đại diện. Không dùng dữ liệu khách hàng thật trong staging.
+
+## 4. Nối website sau khi nghiệm thu staging
 
 Trong GitHub repository:
 

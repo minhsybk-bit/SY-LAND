@@ -7,6 +7,7 @@ on:
       - ".github/workflows/creator-pr-checks.yml"
       - "creator_api/**"
       - "tests/**"
+      - "scripts/check-creator-env.py"
       - "scripts/verify-site.mjs"
       - "creator-studio.tsx"
       - "creator-studio.css"

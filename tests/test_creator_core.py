@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 
 from creator_api.media_validation import valid_video_signature
+from creator_api.preflight import parse_env_file, validate_environment
 from creator_api.signing import signed_download_url, valid_download_signature
 from creator_api.source_policy import SourceUrlError, parse_source_url, platform_for_host
 
@@ -84,6 +85,52 @@ class DownloadSigningTests(unittest.TestCase):
                 "invalid",
             )
         )
+
+
+class CreatorPreflightTests(unittest.TestCase):
+    def valid_values(self) -> dict[str, str]:
+        return {
+            "ENVIRONMENT": "staging",
+            "PUBLIC_API_URL": "https://creator-staging.syland.vn",
+            "ALLOWED_ORIGINS": "https://minhsybk-bit.github.io",
+            "SUPABASE_URL": "https://abc123.supabase.co",
+            "SUPABASE_ANON_KEY": "anon-value",
+            "SUPABASE_SERVICE_ROLE_KEY": "service-role-value",
+            "OPENAI_API_KEY": "openai-value",
+            "GEMINI_API_KEY": "",
+            "REDIS_URL": "redis://redis:6379/0",
+            "CREATOR_STORAGE_DIR": "/data/creator",
+            "DOWNLOAD_SIGNING_SECRET": "a" * 64,
+            "SIGNED_URL_TTL_SECONDS": "900",
+            "MAX_UPLOAD_BYTES": "524288000",
+            "MAX_VIDEO_SECONDS": "1800",
+            "OUTPUT_RETENTION_HOURS": "24",
+        }
+
+    def test_valid_staging_environment(self) -> None:
+        self.assertEqual(validate_environment(self.valid_values()), [])
+
+    def test_placeholders_wildcard_and_missing_ai_key_are_rejected(self) -> None:
+        values = self.valid_values()
+        values.update(
+            {
+                "PUBLIC_API_URL": "https://creator-api.ten-mien-cua-ban.vn",
+                "ALLOWED_ORIGINS": "*",
+                "OPENAI_API_KEY": "",
+                "DOWNLOAD_SIGNING_SECRET": "REPLACE_WITH_SECRET",
+            }
+        )
+        errors = validate_environment(values)
+        self.assertTrue(any("PUBLIC_API_URL" in error for error in errors))
+        self.assertTrue(any("ALLOWED_ORIGINS" in error for error in errors))
+        self.assertTrue(any("OPENAI_API_KEY" in error for error in errors))
+        self.assertTrue(any("DOWNLOAD_SIGNING_SECRET" in error for error in errors))
+
+    def test_parse_env_file_does_not_expand_secret_values(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / ".env.creator"
+            path.write_text("ENVIRONMENT=staging\nSECRET='literal-$VALUE'\n", encoding="utf-8")
+            self.assertEqual(parse_env_file(path)["SECRET"], "literal-$VALUE")
 
 
 if __name__ == "__main__":
