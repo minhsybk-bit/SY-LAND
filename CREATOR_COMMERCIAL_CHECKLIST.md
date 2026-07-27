@@ -26,7 +26,8 @@ GitHub Issue, Pull Request hoặc cửa sổ chat.
 - [ ] Kiểm tra migration `SUPABASE_CREATOR.sql` trên bản sao dự án Supabase.
 - [ ] Chốt hạn mức phút và thời lượng tối đa của từng gói thương mại.
 - [ ] Chuẩn bị 20 video kiểm thử có quyền sử dụng hợp lệ.
-- [ ] Chuẩn bị nội dung điều khoản sử dụng Creator và chính sách lưu video 24 giờ.
+- [x] Bổ sung điều khoản sử dụng Creator và chính sách lưu video 24 giờ.
+- [x] Bản xuất dữ liệu cá nhân bao gồm metadata dự án, tác vụ và hạn mức Creator.
 
 ## B. Thực hiện sau cùng khi thuê GPU
 

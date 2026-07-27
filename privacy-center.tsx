@@ -75,12 +75,15 @@ export default function PrivacyCenter() {
         ["consultations", "/leads?select=id,unit,contact,monthly_volume,people,needs,proposed_plan,note,status,created_at"],
         ["supportTickets", "/support_tickets?select=id,ticket_code,title,category,priority,details,status,app_version,created_at,updated_at"],
         ["privacyRequests", "/privacy_requests?select=id,request_code,request_type,status,note,admin_note,created_at,updated_at"],
+        ["creatorProjects", "/creator_projects?select=id,title,source_type,source_platform,source_visibility,ownership_status,rights_status,rights_evidence,status,rights_confirmed_at,created_at,updated_at"],
+        ["creatorJobs", "/creator_jobs?select=id,project_id,status,progress,provider,voice,whisper_model,background_volume,subtitle_size,duration_seconds,error_code,error_message,started_at,completed_at,created_at,updated_at"],
+        ["creatorUsage", "/creator_usage_ledger?select=id,job_id,minutes,event_type,note,created_at"],
       ] as const;
       const entries = await Promise.all(endpoints.map(async ([key, path]) => {
         try { return [key, await dataRequest(path, token)] as const; }
         catch (reason) { return [key, { unavailable: reason instanceof Error ? reason.message : "Không truy xuất được" }] as const; }
       }));
-      saveJson({ product: "SỸ LAND", exportedAt: new Date().toISOString(), account: session.account, ...Object.fromEntries(entries), notice: "Tệp hồ sơ Word, PDF, Excel không nằm trong bản xuất vì được xử lý cục bộ trên thiết bị." }, `SYLAND_DU_LIEU_CA_NHAN_${new Date().toISOString().slice(0, 10)}.json`);
+      saveJson({ product: "SỸ LAND", exportedAt: new Date().toISOString(), account: session.account, ...Object.fromEntries(entries), notice: "Tệp hồ sơ Word, PDF, Excel và tệp video không nằm trong bản xuất. Hồ sơ văn phòng được xử lý cục bộ; tệp video Creator được xóa theo thời hạn lưu, còn metadata tác vụ và hạn mức được liệt kê trong bản xuất." }, `SYLAND_DU_LIEU_CA_NHAN_${new Date().toISOString().slice(0, 10)}.json`);
       setMessage("Đã tạo tệp dữ liệu cá nhân. Hãy bảo quản tệp tại nơi an toàn.");
     } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Không xuất được dữ liệu."); }
     finally { setBusy(false); }
