@@ -4,6 +4,10 @@ Website và phần mềm Windows dùng chung một dự án Supabase Auth. Ngư�
 tài khoản bằng Google, email/mật khẩu hoặc liên kết email đều được nhận diện bằng
 `auth.users.id`; dữ liệu nghiệp vụ được tách bằng Row Level Security (RLS).
 
+Website sử dụng OAuth PKCE: mã verifier được tạo và lưu ngay trước khi chuyển
+sang Google, sau đó dùng đúng một lần khi Google trả về. Không được xóa
+`sy-land-oauth-pkce-verifier` trước khi bắt đầu chuyển hướng.
+
 ## 1. Tạo thông tin OAuth trên Google Cloud
 
 1. Mở Google Cloud Console và chọn hoặc tạo dự án SỸ LAND.
@@ -69,4 +73,3 @@ Website hỗ trợ:
 5. Đăng nhập admin và xác nhận admin nhìn thấy cả hai để đối soát.
 6. Trên Windows, nhấn **Tiếp tục bằng Google**, đăng nhập A và kiểm tra đúng gói
    của A được nhận.
-
