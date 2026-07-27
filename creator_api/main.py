@@ -14,7 +14,15 @@ from pydantic import ValidationError
 from .config import Settings, get_settings
 from .database import Database, STATUS_MESSAGES
 from .media_validation import valid_video_signature
-from .models import CreateUrlJobRequest, InspectRequest, JobResponse, JobSettings, UsageSummary, UserIdentity
+from .models import (
+    CreateUrlJobRequest,
+    InspectRequest,
+    JobHistoryItem,
+    JobResponse,
+    JobSettings,
+    UsageSummary,
+    UserIdentity,
+)
 from .pipeline import probe_duration
 from .security import authenticated_user
 from .signing import signed_download_url, valid_download_signature
@@ -82,6 +90,20 @@ def job_response(job: dict, settings: Settings) -> JobResponse:
     )
 
 
+def history_response(job: dict, settings: Settings) -> JobHistoryItem:
+    project = job.get("creator_projects") or {}
+    if isinstance(project, list):
+        project = project[0] if project else {}
+    current = job_response(job, settings)
+    return JobHistoryItem(
+        **current.model_dump(by_alias=True),
+        title=str(project.get("title") or "Video Creator"),
+        sourcePlatform=str(project.get("source_platform") or "unknown"),
+        durationSeconds=job.get("duration_seconds"),
+        createdAt=job["created_at"],
+    )
+
+
 @app.get("/health")
 def health() -> dict:
     return {"ok": True, "service": "syland-creator-api", "version": app.version}
@@ -132,6 +154,16 @@ def get_creator_usage(
     current_settings: Settings = Depends(get_settings),
 ):
     return Database(current_settings).get_usage_summary(user.id)
+
+
+@app.get("/v1/video/jobs", response_model=list[JobHistoryItem], response_model_by_alias=True)
+def list_creator_jobs(
+    limit: int = Query(default=10, ge=1, le=20),
+    user: UserIdentity = Depends(authenticated_user),
+    current_settings: Settings = Depends(get_settings),
+):
+    jobs = Database(current_settings).list_owned_jobs(user.id, limit)
+    return [history_response(job, current_settings) for job in jobs]
 
 
 @app.post("/v1/video/jobs", response_model=JobResponse, response_model_by_alias=True)

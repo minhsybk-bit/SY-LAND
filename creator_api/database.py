@@ -114,6 +114,20 @@ class Database:
         rows = response.json()
         return rows[0] if rows else None
 
+    def list_owned_jobs(self, user_id: str, limit: int = 10) -> list[dict]:
+        response = self._request(
+            "GET",
+            "creator_jobs",
+            params={
+                "user_id": f"eq.{user_id}",
+                "select": "*,creator_projects(title,source_platform)",
+                "order": "created_at.desc",
+                "limit": str(max(1, min(limit, 20))),
+            },
+        )
+        payload = response.json()
+        return list(payload) if isinstance(payload, list) else []
+
     def get_job_with_project(self, job_id: str) -> dict | None:
         response = self._request(
             "GET",

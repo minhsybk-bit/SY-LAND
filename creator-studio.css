@@ -88,6 +88,18 @@
 .creator-actions button { min-width: 180px; border: 0; cursor: pointer; }
 .creator-actions button:disabled { opacity: .45; cursor: not-allowed; }
 .creator-actions p { margin: 0; color: #738078; font-size: 9px; line-height: 1.45; }
+.creator-history { margin-top: 24px; padding-top: 20px; border-top: 1px solid #d6d7d1; }
+.creator-history > div:first-child { display: flex; justify-content: space-between; gap: 14px; align-items: end; }
+.creator-history h3 { margin: 0; color: var(--ink); font-size: 14px; }
+.creator-history > div:first-child small { color: #7b857e; font-size: 8px; }
+.creator-history-list { display: grid; gap: 7px; margin-top: 11px; }
+.creator-history-list button { display: flex; justify-content: space-between; gap: 18px; align-items: center; width: 100%; padding: 12px 13px; border: 1px solid #d0d5cf; color: inherit; background: #f8f6f0; cursor: pointer; text-align: left; }
+.creator-history-list button:hover, .creator-history-list button.active { border-color: var(--green); background: #edf4ef; }
+.creator-history-list button > span:last-child { flex: 0 0 auto; text-align: right; }
+.creator-history-list b, .creator-history-list strong, .creator-history-list small { display: block; }
+.creator-history-list b { max-width: 480px; overflow: hidden; color: var(--ink); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.creator-history-list strong { color: var(--green); font-size: 9px; }
+.creator-history-list small { margin-top: 4px; color: #7a847d; font-size: 8px; }
 
 @media (max-width: 1080px) {
   .creator-shell { grid-template-columns: 235px minmax(0,1fr); }
@@ -115,4 +127,6 @@
   .creator-settings, .creator-risk dl { grid-template-columns: 1fr; }
   .creator-inspection-head, .creator-actions { align-items: stretch; flex-direction: column; }
   .creator-inspection-head button, .creator-actions button { width: 100%; }
+  .creator-history > div:first-child, .creator-history-list button { align-items: flex-start; flex-direction: column; }
+  .creator-history-list button > span:last-child { text-align: left; }
 }

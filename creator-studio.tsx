@@ -33,6 +33,13 @@ type CreatorUsage = {
   resetsAt: string;
 };
 
+type CreatorHistoryItem = CreatorJob & {
+  title: string;
+  sourcePlatform: string;
+  durationSeconds?: number;
+  createdAt: string;
+};
+
 const API_BASE = String(import.meta.env.VITE_SYLAND_CREATOR_API_URL || "").trim().replace(/\/$/, "");
 const REMOTE_SESSION_KEY = "sy-land-auth-session";
 const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
@@ -135,6 +142,7 @@ function CreatorStudio() {
   const [inspectionState, setInspectionState] = useState<"idle" | "checking" | "done" | "error">("idle");
   const [job, setJob] = useState<CreatorJob | null>(null);
   const [usage, setUsage] = useState<CreatorUsage | null>(null);
+  const [history, setHistory] = useState<CreatorHistoryItem[]>([]);
   const [message, setMessage] = useState("");
 
   const preliminaryPlatform = useMemo(() => platformFromUrl(sourceUrl), [sourceUrl]);
@@ -153,8 +161,13 @@ function CreatorStudio() {
   }, []);
 
   useEffect(() => {
-    if (accountReady && API_BASE) void loadUsage();
-    else setUsage(null);
+    if (accountReady && API_BASE) {
+      void loadUsage();
+      void loadHistory();
+    } else {
+      setUsage(null);
+      setHistory([]);
+    }
   }, [accountReady]);
 
   async function loadUsage() {
@@ -162,6 +175,15 @@ function CreatorStudio() {
       setUsage(await apiRequest("/v1/video/usage") as CreatorUsage);
     } catch {
       setUsage(null);
+    }
+  }
+
+  async function loadHistory() {
+    try {
+      const rows = await apiRequest("/v1/video/jobs?limit=10");
+      setHistory(Array.isArray(rows) ? rows as CreatorHistoryItem[] : []);
+    } catch {
+      setHistory([]);
     }
   }
 
@@ -254,6 +276,7 @@ function CreatorStudio() {
         pollTimer.current = window.setTimeout(() => pollJob(jobId), 3000);
       } else {
         void loadUsage();
+        void loadHistory();
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Không thể cập nhật tiến độ.");
@@ -286,6 +309,7 @@ function CreatorStudio() {
         }) as CreatorJob;
       }
       setJob(created);
+      void loadHistory();
       pollJob(created.id);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Không thể tạo tác vụ video.");
@@ -302,6 +326,7 @@ function CreatorStudio() {
       }) as CreatorJob;
       setJob(next);
       void loadUsage();
+      void loadHistory();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Không thể hủy tác vụ.");
       pollJob(job.id);
@@ -312,6 +337,15 @@ function CreatorStudio() {
     if (pollTimer.current) window.clearTimeout(pollTimer.current);
     setJob(null);
     setMessage("");
+  }
+
+  function resumeHistory(item: CreatorHistoryItem) {
+    if (pollTimer.current) window.clearTimeout(pollTimer.current);
+    setJob(item);
+    setMessage("");
+    if (!["completed", "failed", "cancelled"].includes(item.status)) {
+      void pollJob(item.id);
+    }
   }
 
   return (
@@ -425,6 +459,20 @@ function CreatorStudio() {
             <button className="button button-primary" type="submit" disabled={!canCreate}>Tạo Video <span aria-hidden="true">→</span></button>
             <p>{!accountReady ? "Cần đăng nhập tài khoản SỸ LAND." : !inspection ? "Kiểm tra nguồn video trước khi xử lý." : !rightsConfirmed ? "Cần xác nhận quyền sử dụng." : inspection.canProcess ? "Sẵn sàng gửi tới máy chủ xử lý." : "Nguồn video này không được phép xử lý."}</p>
           </div>
+
+          {history.length > 0 && (
+            <section className="creator-history" aria-labelledby="creator-history-title">
+              <div><h3 id="creator-history-title">Tác vụ gần đây</h3><small>Chỉ hiển thị dữ liệu thuộc tài khoản đang đăng nhập.</small></div>
+              <div className="creator-history-list">
+                {history.map((item) => (
+                  <button type="button" key={item.id} className={job?.id === item.id ? "active" : ""} onClick={() => resumeHistory(item)}>
+                    <span><b>{item.title}</b><small>{item.sourcePlatform} · {new Date(item.createdAt).toLocaleString("vi-VN")}</small></span>
+                    <span><strong>{progressLabels[item.status]}</strong><small>{item.status === "completed" && !item.outputUrl ? "Đã hết hạn tải" : `${Math.round(item.progress)}%`}</small></span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
         </form>
       </div>
     </section>

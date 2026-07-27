@@ -160,6 +160,17 @@ assert(
   "Giao diện Creator hiển thị hạn mức phút và ngày làm mới"
 );
 assert(
+  creatorApi.includes('@app.get("/v1/video/jobs"') &&
+    creatorApi.includes("list_owned_jobs(user.id, limit)"),
+  "API lịch sử Creator luôn lọc theo tài khoản đã xác thực"
+);
+assert(
+  creatorStudio.includes('apiRequest("/v1/video/jobs?limit=10")') &&
+    creatorStudio.includes("Tác vụ gần đây") &&
+    creatorStudio.includes("resumeHistory"),
+  "Giao diện Creator khôi phục tác vụ gần đây sau khi tải lại trang"
+);
+assert(
   creatorSql.includes("revoke all on function public.creator_reserve_minutes") &&
     creatorSql.includes("grant execute on function public.creator_reserve_minutes") &&
     creatorSql.includes("to service_role"),

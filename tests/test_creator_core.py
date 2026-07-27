@@ -209,5 +209,14 @@ class CreatorMigrationSecurityTests(unittest.TestCase):
         self.assertNotIn("không giới hạn", summary)
 
 
+class CreatorHistoryIsolationTests(unittest.TestCase):
+    def test_history_query_and_endpoint_use_authenticated_user(self) -> None:
+        database_source = Path("creator_api/database.py").read_text(encoding="utf-8")
+        api_source = Path("creator_api/main.py").read_text(encoding="utf-8")
+        self.assertIn('"user_id": f"eq.{user_id}"', database_source)
+        self.assertIn("list_owned_jobs(user.id, limit)", api_source)
+        self.assertIn('Depends(authenticated_user)', api_source)
+
+
 if __name__ == "__main__":
     unittest.main()

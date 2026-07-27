@@ -69,6 +69,13 @@ class JobResponse(ApiModel):
     output_url: str | None = Field(default=None, alias="outputUrl")
 
 
+class JobHistoryItem(JobResponse):
+    title: str
+    source_platform: str = Field(alias="sourcePlatform")
+    duration_seconds: float | None = Field(default=None, alias="durationSeconds")
+    created_at: datetime = Field(alias="createdAt")
+
+
 class UsageSummary(ApiModel):
     plan: str
     monthly_limit_minutes: float = Field(alias="monthlyLimitMinutes", ge=0)

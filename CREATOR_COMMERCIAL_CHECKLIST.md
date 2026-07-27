@@ -19,6 +19,8 @@ GitHub Issue, Pull Request hoặc cửa sổ chat.
 - [x] Phút hoàn ở thời điểm giao tháng không làm sai hạn mức tháng mới.
 - [x] Giao diện hiển thị gói, phút đã dùng/còn lại, giới hạn video và ngày làm mới.
 - [x] Mọi tài khoản Creator đều có hạn mức phút; không có chế độ video không giới hạn.
+- [x] Lịch sử tác vụ chỉ lấy theo tài khoản và có thể mở lại sau khi tải lại trang.
+- [x] Kết quả đã hết hạn tải được phân biệt với tác vụ vẫn còn MP4.
 - [x] Liên kết tải MP4 có chữ ký và thời hạn ngắn.
 - [x] Thông báo lỗi công khai không chứa API key, đường dẫn hoặc log nội bộ.
 - [x] Kiểm tra cấu trúc bản dịch AI trước khi tạo giọng đọc.
