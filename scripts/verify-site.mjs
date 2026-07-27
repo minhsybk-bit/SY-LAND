@@ -33,12 +33,15 @@ const source = sourceFiles.map((name) => readFileSync(join(root, name), "utf8"))
 const page = readFileSync(join(root, "page.tsx"), "utf8");
 const accountPortal = readFileSync(join(root, "account-portal.tsx"), "utf8");
 const paymentCenter = readFileSync(join(root, "payment-center.tsx"), "utf8");
-for (const id of ["minh-hoa", "cong-cu-pdf", "tai-phan-mem", "tai-khoan", "thanh-toan", "phap-ly"]) {
+for (const id of ["minh-hoa", "cong-cu-pdf", "syland-creator", "tai-phan-mem", "tai-khoan", "thanh-toan", "phap-ly"]) {
   assert(page.includes(`id="${id}"`), `Có điểm điều hướng #${id}`);
 }
 assert(page.includes("lazy(() => import(\"./file-processor\"))"), "Xử lý tệp được tải theo nhu cầu");
 assert(page.includes("lazy(() => import(\"./pdf-toolkit\"))"), "Công cụ PDF được tải theo nhu cầu");
+assert(page.includes("lazy(() => import(\"./creator-studio\"))"), "SỸ LAND Creator được tải theo nhu cầu");
 assert(!source.includes("@import \"tailwindcss\""), "Không nạp Tailwind không sử dụng");
+assert(!source.includes("VITE_OPENAI_API_KEY"), "Không đưa OpenAI API Key vào trình duyệt");
+assert(!source.includes("VITE_GEMINI_API_KEY"), "Không đưa Gemini API Key vào trình duyệt");
 assert(accountPortal.includes('remoteAuth("/settings"'), "Google OAuth kiểm tra trạng thái nhà cung cấp trước khi chuyển hướng");
 assert(accountPortal.includes("unable to exchange external code"), "Google OAuth giải thích lỗi Client Secret");
 assert(!accountPortal.includes('url.searchParams.set("oauth"'), "OAuth dùng URL callback GitHub Pages chính xác, không thêm query thừa");
@@ -57,6 +60,12 @@ const paymentSql = readFileSync(join(root, "SUPABASE_PAYMENTS.sql"), "utf8");
 const paymentFix = readFileSync(join(root, "SUPABASE_PAYMENT_PLANS_FIX.sql"), "utf8");
 const repairSql = readFileSync(join(root, "SUPABASE_REPAIR_AUTH_PAYMENTS.sql"), "utf8");
 const stableAccountSql = readFileSync(join(root, "SUPABASE_STABLE_ACCOUNT_SYNC.sql"), "utf8");
+const creatorSql = readFileSync(join(root, "SUPABASE_CREATOR.sql"), "utf8");
+const creatorApi = readFileSync(join(root, "creator_api", "main.py"), "utf8");
+const creatorSources = readFileSync(join(root, "creator_api", "sources.py"), "utf8");
+const creatorPipeline = readFileSync(join(root, "creator_api", "pipeline.py"), "utf8");
+const creatorTasks = readFileSync(join(root, "creator_api", "tasks.py"), "utf8");
+const creatorCelery = readFileSync(join(root, "creator_api", "celery_app.py"), "utf8");
 assert(
   schemaSql.includes('create policy "profile_self_read"') &&
     schemaSql.includes("id = auth.uid() or public.is_syland_admin()"),
@@ -120,6 +129,65 @@ assert(
   accountPortal.includes('currentEntitlements.plan !== "Dùng thử"') &&
     accountPortal.includes('currentEntitlements.role === "admin" ? "Không giới hạn"'),
   "Gói quản trị hiển thị hoạt động và không giới hạn"
+);
+assert(
+  creatorSql.includes("alter table public.creator_projects enable row level security") &&
+    creatorSql.includes("user_id = auth.uid() or public.is_syland_admin()"),
+  "Dự án Creator được cô lập theo tài khoản bằng RLS"
+);
+assert(
+  creatorSql.includes("Tác vụ chỉ được tạo qua máy chủ Creator") &&
+    !creatorSql.includes('create policy "creator_job_owner_insert"'),
+  "Trình duyệt không thể tự tạo tác vụ Creator trong cơ sở dữ liệu"
+);
+assert(
+  creatorSql.includes("creator_reserve_minutes") &&
+    creatorSql.includes("pg_advisory_xact_lock") &&
+    creatorSql.includes("CREATOR_QUOTA_EXCEEDED"),
+  "Hạn mức Creator được giữ nguyên tử theo tài khoản"
+);
+assert(
+  creatorSql.includes("revoke all on function public.creator_reserve_minutes") &&
+    creatorSql.includes("grant execute on function public.creator_reserve_minutes") &&
+    creatorSql.includes("to service_role"),
+  "Chỉ máy chủ service_role được ghi hạn mức Creator"
+);
+assert(
+  creatorApi.includes("Depends(authenticated_user)") &&
+    creatorApi.includes("valid_download_signature") &&
+    creatorApi.includes("get_owned_job"),
+  "Creator API xác thực tài khoản và ký liên kết tải riêng"
+);
+assert(
+  creatorSources.includes('"cookiefile": None') &&
+    creatorSources.includes('"geo_bypass": False') &&
+    creatorSources.includes('risk="blocked"'),
+  "Quét nguồn Creator không dùng cookie hoặc vượt video riêng tư"
+);
+assert(
+  creatorPipeline.includes("client.responses.create(") &&
+    creatorPipeline.includes("store=False") &&
+    !creatorPipeline.includes("VITE_OPENAI_API_KEY"),
+  "Dịch OpenAI dùng Responses API và không lưu khóa ở client"
+);
+assert(
+  creatorApi.includes('@app.get("/ready")') &&
+    creatorApi.includes('"storage": False') &&
+    creatorApi.includes('"database": False') &&
+    creatorApi.includes('"queue": False'),
+  "Creator API có readiness check cho lưu trữ, Supabase và Redis"
+);
+assert(
+  creatorApi.includes('@app.post("/v1/video/jobs/{job_id}/cancel"') &&
+    creatorTasks.includes("class JobCancelled") &&
+    creatorTasks.includes("refund_minutes"),
+  "Chủ tài khoản có thể hủy tác vụ và được hoàn hạn mức"
+);
+assert(
+  creatorTasks.includes('@celery_app.task(name="creator.cleanup_expired_outputs")') &&
+    creatorCelery.includes('"cleanup-expired-creator-outputs"') &&
+    creatorCelery.includes('include=["creator_api.tasks"]'),
+  "Worker đăng ký tác vụ và tự dọn MP4 hết thời hạn"
 );
 
 console.log(`SỸ LAND verification: ${pass.length} kiểm tra đạt.`);

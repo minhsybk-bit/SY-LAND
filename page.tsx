@@ -6,6 +6,7 @@ import SystemCheck from "./system-check";
 
 const FileProcessor = lazy(() => import("./file-processor"));
 const PdfToolkit = lazy(() => import("./pdf-toolkit"));
+const CreatorStudio = lazy(() => import("./creator-studio"));
 const SoftwareRelease = lazy(() => import("./software-release"));
 const AccountPortal = lazy(() => import("./account-portal"));
 const SupportCenter = lazy(() => import("./support-center"));
@@ -166,6 +167,7 @@ export default function Home() {
               <div className="nav-dropdown">
                 <a href="#minh-hoa"><b>Xử lý tệp</b><small>Word, PDF, Excel và dữ liệu địa chính</small></a>
                 <a href="#cong-cu-pdf"><b>Bộ công cụ PDF</b><small>Tách, ghép, kiểm tra, OCR và tối ưu</small></a>
+                <a href="#syland-creator"><b>SỸ LAND Creator</b><small>Việt hóa, lồng tiếng và phụ đề Video AI</small></a>
                 <a href="#chuc-nang-phan-mem"><b>Phần mềm SỸ LAND</b><small>Các chức năng dành cho Windows</small></a>
               </div>
             </details>
@@ -196,6 +198,7 @@ export default function Home() {
                 <p>Công cụ</p>
                 <a href="#minh-hoa">Xử lý Word, PDF, Excel</a>
                 <a href="#cong-cu-pdf">Bộ công cụ PDF</a>
+                <a href="#syland-creator">SỸ LAND Creator · Video AI</a>
                 <a href="#chuc-nang-phan-mem">Phần mềm SỸ LAND</a>
                 <p>Tài khoản và dịch vụ</p>
                 <a href="#tai-phan-mem">Tải phần mềm</a>
@@ -305,6 +308,7 @@ export default function Home() {
           </div>
           <DeferredSection label="công cụ xử lý tệp" minHeight={420}><FileProcessor /></DeferredSection>
           <DeferredSection id="cong-cu-pdf" label="bộ công cụ PDF" minHeight={420}><PdfToolkit /></DeferredSection>
+          <DeferredSection id="syland-creator" label="SỸ LAND Creator" minHeight={720}><CreatorStudio /></DeferredSection>
 
           <section className="software-capabilities" id="chuc-nang-phan-mem" aria-labelledby="software-capabilities-title">
             <div className="section-heading split-heading">
