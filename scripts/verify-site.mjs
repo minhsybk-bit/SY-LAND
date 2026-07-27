@@ -66,6 +66,7 @@ const creatorSources = readFileSync(join(root, "creator_api", "sources.py"), "ut
 const creatorPipeline = readFileSync(join(root, "creator_api", "pipeline.py"), "utf8");
 const creatorTasks = readFileSync(join(root, "creator_api", "tasks.py"), "utf8");
 const creatorCelery = readFileSync(join(root, "creator_api", "celery_app.py"), "utf8");
+const creatorStudio = readFileSync(join(root, "creator-studio.tsx"), "utf8");
 assert(
   schemaSql.includes('create policy "profile_self_read"') &&
     schemaSql.includes("id = auth.uid() or public.is_syland_admin()"),
@@ -145,6 +146,18 @@ assert(
     creatorSql.includes("pg_advisory_xact_lock") &&
     creatorSql.includes("CREATOR_QUOTA_EXCEEDED"),
   "Hạn mức Creator được giữ nguyên tử theo tài khoản"
+);
+assert(
+  creatorSql.includes("creator_usage_summary") &&
+    creatorSql.includes("'remainingMinutes'") &&
+    creatorApi.includes('@app.get("/v1/video/usage"'),
+  "API Creator trả gói và số phút còn lại từ máy chủ"
+);
+assert(
+  creatorStudio.includes('apiRequest("/v1/video/usage")') &&
+    creatorStudio.includes("phút còn lại") &&
+    creatorStudio.includes("làm mới"),
+  "Giao diện Creator hiển thị hạn mức phút và ngày làm mới"
 );
 assert(
   creatorSql.includes("revoke all on function public.creator_reserve_minutes") &&

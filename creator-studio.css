@@ -7,6 +7,9 @@
 .creator-account-badge span { color: #b6c9bf; font-size: 9px; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
 .creator-account-badge strong { margin-top: 7px; font-size: 17px; }
 .creator-account-badge small { margin-top: 7px; color: #aebfb6; font-size: 9px; line-height: 1.45; }
+.creator-account-badge progress { width: 100%; height: 7px; margin-top: 10px; overflow: hidden; border: 0; border-radius: 999px; accent-color: #63b88c; background: rgba(255,255,255,.14); }
+.creator-account-badge progress::-webkit-progress-bar { border-radius: 999px; background: rgba(255,255,255,.14); }
+.creator-account-badge progress::-webkit-progress-value { border-radius: 999px; background: #63b88c; }
 .creator-shell { display: grid; grid-template-columns: 285px minmax(0,1fr); min-height: 760px; overflow: hidden; border: 1px solid #c7c8c0; background: #fffdf8; box-shadow: 0 28px 72px rgba(35,53,44,.1); }
 .creator-steps { display: flex; flex-direction: column; padding: 28px 22px; color: white; background: linear-gradient(155deg,#112f28,#07553f 72%,#0c684f); }
 .creator-product-mark { display: grid; place-items: center; width: 48px; height: 48px; border: 1px solid rgba(255,255,255,.35); border-radius: 12px; color: var(--green); background: #f3efe5; font-size: 22px; font-weight: 950; }

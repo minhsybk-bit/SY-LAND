@@ -192,6 +192,22 @@ class CreatorMigrationSecurityTests(unittest.TestCase):
         self.assertIn("refund_entry.event_type = 'refund'", self.sql)
         self.assertIn("and not exists", self.sql)
 
+    def test_usage_summary_is_server_only_and_never_unlimited(self) -> None:
+        self.assertIn("creator_usage_summary", self.sql)
+        self.assertIn("'remainingminutes'", self.sql)
+        self.assertIn(
+            "revoke all on function public.creator_usage_summary(uuid) from public, anon, authenticated;",
+            self.sql,
+        )
+        self.assertIn(
+            "grant execute on function public.creator_usage_summary(uuid) to service_role;",
+            self.sql,
+        )
+        summary = self.sql[self.sql.index("create or replace function public.creator_usage_summary") :]
+        summary = summary[: summary.index("create or replace function public.creator_reserve_minutes")]
+        self.assertNotIn("unlimited", summary)
+        self.assertNotIn("không giới hạn", summary)
+
 
 if __name__ == "__main__":
     unittest.main()

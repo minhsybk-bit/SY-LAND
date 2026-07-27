@@ -14,7 +14,7 @@ from pydantic import ValidationError
 from .config import Settings, get_settings
 from .database import Database, STATUS_MESSAGES
 from .media_validation import valid_video_signature
-from .models import CreateUrlJobRequest, InspectRequest, JobResponse, JobSettings, UserIdentity
+from .models import CreateUrlJobRequest, InspectRequest, JobResponse, JobSettings, UsageSummary, UserIdentity
 from .pipeline import probe_duration
 from .security import authenticated_user
 from .signing import signed_download_url, valid_download_signature
@@ -124,6 +124,14 @@ async def inspect_video(
 ):
     del user
     return await inspect_public_source(str(request.url), current_settings)
+
+
+@app.get("/v1/video/usage", response_model=UsageSummary, response_model_by_alias=True)
+def get_creator_usage(
+    user: UserIdentity = Depends(authenticated_user),
+    current_settings: Settings = Depends(get_settings),
+):
+    return Database(current_settings).get_usage_summary(user.id)
 
 
 @app.post("/v1/video/jobs", response_model=JobResponse, response_model_by_alias=True)

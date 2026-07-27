@@ -140,6 +140,72 @@ grant all on public.creator_usage_ledger to service_role;
 grant all on public.creator_plan_limits to service_role;
 grant usage, select on sequence public.creator_usage_ledger_id_seq to service_role;
 
+create or replace function public.creator_usage_summary(
+  p_user_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  v_email text;
+  v_plan text := 'Dùng thử';
+  v_limit numeric;
+  v_max_video numeric;
+  v_used numeric;
+begin
+  if p_user_id is null or not exists (
+    select 1 from auth.users where id = p_user_id
+  ) then
+    raise exception 'CREATOR_USER_NOT_FOUND';
+  end if;
+
+  select lower(coalesce(email, '')) into v_email
+  from auth.users
+  where id = p_user_id;
+
+  select l.plan into v_plan
+  from public.licenses l
+  where lower(l.email) = v_email
+    and l.status = 'Hoạt động'
+    and l.expires_at > now()
+  order by l.expires_at desc
+  limit 1;
+  v_plan := coalesce(v_plan, 'Dùng thử');
+
+  select monthly_minutes, max_video_minutes
+  into v_limit, v_max_video
+  from public.creator_plan_limits
+  where plan = v_plan;
+  if v_limit is null then
+    raise exception 'CREATOR_PLAN_NOT_CONFIGURED';
+  end if;
+
+  select coalesce(sum(reserve_entry.minutes), 0)
+  into v_used
+  from public.creator_usage_ledger reserve_entry
+  where reserve_entry.user_id = p_user_id
+    and reserve_entry.event_type = 'reserve'
+    and reserve_entry.created_at >= date_trunc('month', now())
+    and not exists (
+      select 1
+      from public.creator_usage_ledger refund_entry
+      where refund_entry.job_id = reserve_entry.job_id
+        and refund_entry.event_type = 'refund'
+    );
+
+  return jsonb_build_object(
+    'plan', v_plan,
+    'monthlyLimitMinutes', v_limit,
+    'usedMinutes', v_used,
+    'remainingMinutes', greatest(v_limit - v_used, 0),
+    'maxVideoMinutes', v_max_video,
+    'resetsAt', date_trunc('month', now()) + interval '1 month'
+  );
+end;
+$$;
+
 create or replace function public.creator_reserve_minutes(
   p_job_id uuid,
   p_minutes numeric
@@ -276,8 +342,10 @@ $$;
 revoke all on function public.creator_reserve_minutes(uuid, numeric) from public, anon, authenticated;
 revoke all on function public.creator_consume_minutes(uuid, numeric) from public, anon, authenticated;
 revoke all on function public.creator_refund_minutes(uuid, numeric) from public, anon, authenticated;
+revoke all on function public.creator_usage_summary(uuid) from public, anon, authenticated;
 grant execute on function public.creator_reserve_minutes(uuid, numeric) to service_role;
 grant execute on function public.creator_consume_minutes(uuid, numeric) to service_role;
 grant execute on function public.creator_refund_minutes(uuid, numeric) to service_role;
+grant execute on function public.creator_usage_summary(uuid) to service_role;
 
 commit;

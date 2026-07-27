@@ -24,6 +24,15 @@ type CreatorJob = {
   outputUrl?: string;
 };
 
+type CreatorUsage = {
+  plan: string;
+  monthlyLimitMinutes: number;
+  usedMinutes: number;
+  remainingMinutes: number;
+  maxVideoMinutes: number;
+  resetsAt: string;
+};
+
 const API_BASE = String(import.meta.env.VITE_SYLAND_CREATOR_API_URL || "").trim().replace(/\/$/, "");
 const REMOTE_SESSION_KEY = "sy-land-auth-session";
 const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
@@ -85,6 +94,13 @@ function riskLabel(value: SourceInspection["risk"]) {
   return "Không được xử lý";
 }
 
+function apiErrorMessage(data: any) {
+  if (typeof data?.message === "string") return data.message;
+  if (typeof data?.detail === "string") return data.detail;
+  if (typeof data?.detail?.message === "string") return data.detail.message;
+  return "Máy chủ Creator từ chối yêu cầu.";
+}
+
 async function apiRequest(path: string, init: RequestInit = {}) {
   if (!API_BASE) throw new Error("Dịch vụ xử lý video chưa được cấu hình trên website.");
   const token = readAccessToken();
@@ -98,7 +114,7 @@ async function apiRequest(path: string, init: RequestInit = {}) {
     },
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.message || data.detail || "Máy chủ Creator từ chối yêu cầu.");
+  if (!response.ok) throw new Error(apiErrorMessage(data));
   return data;
 }
 
@@ -118,6 +134,7 @@ function CreatorStudio() {
   const [inspection, setInspection] = useState<SourceInspection | null>(null);
   const [inspectionState, setInspectionState] = useState<"idle" | "checking" | "done" | "error">("idle");
   const [job, setJob] = useState<CreatorJob | null>(null);
+  const [usage, setUsage] = useState<CreatorUsage | null>(null);
   const [message, setMessage] = useState("");
 
   const preliminaryPlatform = useMemo(() => platformFromUrl(sourceUrl), [sourceUrl]);
@@ -134,6 +151,19 @@ function CreatorStudio() {
   useEffect(() => () => {
     if (pollTimer.current) window.clearTimeout(pollTimer.current);
   }, []);
+
+  useEffect(() => {
+    if (accountReady && API_BASE) void loadUsage();
+    else setUsage(null);
+  }, [accountReady]);
+
+  async function loadUsage() {
+    try {
+      setUsage(await apiRequest("/v1/video/usage") as CreatorUsage);
+    } catch {
+      setUsage(null);
+    }
+  }
 
   const safeOutputUrl = useMemo(() => {
     if (!job?.outputUrl) return "";
@@ -222,6 +252,8 @@ function CreatorStudio() {
       setJob(next);
       if (!["completed", "failed", "cancelled"].includes(next.status)) {
         pollTimer.current = window.setTimeout(() => pollJob(jobId), 3000);
+      } else {
+        void loadUsage();
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Không thể cập nhật tiến độ.");
@@ -269,6 +301,7 @@ function CreatorStudio() {
         method: "POST",
       }) as CreatorJob;
       setJob(next);
+      void loadUsage();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Không thể hủy tác vụ.");
       pollJob(job.id);
@@ -290,9 +323,19 @@ function CreatorStudio() {
           <p>Dịch lời thoại, lồng tiếng Việt, ghép phụ đề và kiểm tra nguồn sử dụng trong một quy trình có kiểm soát.</p>
         </div>
         <div className="creator-account-badge">
-          <span>{entitlements.role === "guest" ? "Chưa đăng nhập" : `Gói ${entitlements.plan}`}</span>
-          <strong>{entitlements.fullTools ? "Creator nâng cao" : "Creator tiêu chuẩn"}</strong>
-          <small>{entitlements.reason}</small>
+          <span>{entitlements.role === "guest" ? "Chưa đăng nhập" : `Gói ${usage?.plan || entitlements.plan}`}</span>
+          {usage ? (
+            <>
+              <strong>{usage.remainingMinutes.toLocaleString("vi-VN", { maximumFractionDigits: 1 })} / {usage.monthlyLimitMinutes.toLocaleString("vi-VN", { maximumFractionDigits: 1 })} phút còn lại</strong>
+              <progress max={usage.monthlyLimitMinutes} value={Math.min(usage.usedMinutes, usage.monthlyLimitMinutes)} />
+              <small>Đã dùng {usage.usedMinutes.toLocaleString("vi-VN", { maximumFractionDigits: 1 })} phút · tối đa {usage.maxVideoMinutes.toLocaleString("vi-VN", { maximumFractionDigits: 1 })} phút/video · làm mới {new Date(usage.resetsAt).toLocaleDateString("vi-VN")}</small>
+            </>
+          ) : (
+            <>
+              <strong>{entitlements.fullTools ? "Creator nâng cao" : "Creator tiêu chuẩn"}</strong>
+              <small>{entitlements.reason}</small>
+            </>
+          )}
         </div>
       </div>
 

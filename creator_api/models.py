@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
@@ -66,3 +67,12 @@ class JobResponse(ApiModel):
     progress: int = Field(ge=0, le=100)
     message: str
     output_url: str | None = Field(default=None, alias="outputUrl")
+
+
+class UsageSummary(ApiModel):
+    plan: str
+    monthly_limit_minutes: float = Field(alias="monthlyLimitMinutes", ge=0)
+    used_minutes: float = Field(alias="usedMinutes", ge=0)
+    remaining_minutes: float = Field(alias="remainingMinutes", ge=0)
+    max_video_minutes: float = Field(alias="maxVideoMinutes", gt=0)
+    resets_at: datetime = Field(alias="resetsAt")

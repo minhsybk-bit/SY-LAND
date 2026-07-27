@@ -134,6 +134,17 @@ class Database:
             params={"select": "id", "limit": "1"},
         )
 
+    def get_usage_summary(self, user_id: str) -> dict:
+        response = self._request(
+            "POST",
+            "rpc/creator_usage_summary",
+            json={"p_user_id": user_id},
+        )
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise RuntimeError("Không đọc được hạn mức Creator.")
+        return payload
+
     def update_job(self, job_id: str, **changes: Any) -> None:
         changes["updated_at"] = datetime.now(timezone.utc).isoformat()
         self._request("PATCH", "creator_jobs", params={"id": f"eq.{job_id}"}, json=changes)
