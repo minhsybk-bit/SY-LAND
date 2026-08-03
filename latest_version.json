@@ -1,16 +1,16 @@
 {
   "app_name": "SỸ LAND",
-  "latest_version": "11.6.8",
-  "release_date": "2026-07-24",
-  "download_url": "https://github.com/minhsybk-bit/SY-LAND/releases/download/v11.6.8/SYLAND_Setup_11.6.8.zip",
-  "release_page_url": "https://github.com/minhsybk-bit/SY-LAND/releases/latest",
+  "latest_version": "11.8.7",
+  "release_date": "2026-08-03",
+  "download_url": "https://github.com/minhsybk-bit/SY-LAND/releases/download/v11.8.7/SYLAND_Setup_11.8.7.zip",
+  "release_page_url": "https://github.com/minhsybk-bit/SY-LAND/releases/tag/v11.8.7",
   "website_download_url": "https://minhsybk-bit.github.io/SY-LAND/#tai-phan-mem",
-  "sha256": "",
+  "sha256": "0191b326d1631fe70bab26acad5ab116c25808747be20865a6e1f7febb9d447c",
   "release_notes": [
-    "Sửa tên Word/PDF bị thêm .0 sau số tờ và số thửa",
-    "Giữ nguyên số tờ lâm nghiệp dài 110000, 210000 và 310000",
-    "Tối ưu tài nguyên, giải phóng Word và tránh khóa thư mục ở Tab 7e",
-    "Sửa thanh tiến độ Word sang PDF, hoàn tất đúng 100%"
+    "Đồng bộ phiên bản website và phần mềm Windows về 11.8.7",
+    "Sửa lỗi xuất Word hàng loạt tại Tab 7d",
+    "Chuẩn hóa số tờ, số thửa và loại bỏ phần thập phân .0 không cần thiết",
+    "Cải thiện độ ổn định khi xử lý hồ sơ hàng loạt"
   ],
   "force_update": false
 }
