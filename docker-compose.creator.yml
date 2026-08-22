@@ -1,0 +1,70 @@
+services:
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - creator_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.creator-api
+    restart: unless-stopped
+    env_file: .env.creator
+    command: ["python3", "-m", "uvicorn", "creator_api.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - creator_media:/data/creator
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.creator
+    restart: unless-stopped
+    env_file: .env.creator
+    command: ["python3", "-m", "celery", "-A", "creator_api.celery_app:celery_app", "worker", "--loglevel=INFO", "--concurrency=1"]
+    volumes:
+      - creator_media:/data/creator
+    depends_on:
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile.creator-api
+    restart: unless-stopped
+    env_file: .env.creator
+    command: ["python", "-m", "celery", "-A", "creator_api.celery_app:celery_app", "beat", "--loglevel=INFO"]
+    volumes:
+      - creator_media:/data/creator
+    depends_on:
+      redis:
+        condition: service_healthy
+
+volumes:
+  creator_media:
+  creator_redis:

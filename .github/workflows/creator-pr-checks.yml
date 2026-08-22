@@ -1,0 +1,69 @@
+name: Creator PR Checks
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/creator-pr-checks.yml"
+      - "creator_api/**"
+      - "tests/**"
+      - "scripts/check-creator-env.py"
+      - "scripts/verify-site.mjs"
+      - "creator-studio.tsx"
+      - "creator-studio.css"
+      - "github-pages-main.tsx"
+      - "page.tsx"
+      - "package.json"
+      - "package-lock.json"
+      - "vite.pages.config.ts"
+      - "Dockerfile.creator"
+      - "Dockerfile.creator-api"
+      - "docker-compose.creator.yml"
+      - "creator-requirements.txt"
+      - "creator-api-requirements.txt"
+      - "SUPABASE_CREATOR.sql"
+      - "SYLAND_CREATOR_API.md"
+      - "CREATOR_BACKEND_DEPLOY.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: creator-pr-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Build, security checks and unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install website dependencies
+        run: npm ci
+
+      - name: Build and validate Creator
+        run: npm run check
+
+      - name: Compile Creator backend
+        run: python -m compileall -q creator_api tests
+
+      - name: Validate Docker Compose syntax
+        run: |
+          cp .env.creator.example .env.creator
+          docker compose -f docker-compose.creator.yml config --quiet

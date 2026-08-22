@@ -1,0 +1,31 @@
+FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        ffmpeg \
+        fonts-dejavu-core \
+        python3 \
+        python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY creator-requirements.txt .
+RUN python3 -m pip install --upgrade pip \
+    && python3 -m pip install torch --index-url https://download.pytorch.org/whl/cu124 \
+    && python3 -m pip install -r creator-requirements.txt
+
+COPY creator_api ./creator_api
+
+RUN useradd --create-home --uid 10001 syland \
+    && mkdir -p /data/creator \
+    && chown -R syland:syland /app /data/creator
+USER syland
+
+EXPOSE 8000
+CMD ["python3", "-m", "uvicorn", "creator_api.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]

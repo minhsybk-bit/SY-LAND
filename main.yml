@@ -37,11 +37,17 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_SYLAND_CREATOR_API_URL: ${{ secrets.VITE_SYLAND_CREATOR_API_URL }}
       - name: Build website
         run: npm run build
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_SYLAND_CREATOR_API_URL: ${{ secrets.VITE_SYLAND_CREATOR_API_URL }}
+      - name: Verify website and Creator security
+        run: npm run verify
+      - name: Test Creator core
+        run: npm run test:creator
       - run: mv pages-dist/github-pages.html pages-dist/index.html
       - name: Copy favicon
         shell: bash
